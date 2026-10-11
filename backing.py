@@ -12,6 +12,7 @@ import numpy as np
 import soundfile as sf
 
 import processing as P
+from i18n import UserError
 
 SR_OUT = 44100
 
@@ -49,7 +50,7 @@ def _stretch(audio: np.ndarray, sr: int, rate: float, ffmpeg: str, only: str | N
             if res.returncode == 0 and dst.exists():
                 out, _ = sf.read(dst, dtype="float32", always_2d=True)
                 return out, flt
-        raise RuntimeError("ยืดเวลาเสียงไม่สำเร็จ: " + res.stderr.decode(errors="replace")[-300:])
+        raise RuntimeError("time-stretch failed: " + res.stderr.decode(errors="replace")[-300:])
 
 
 def _stretch_latency(sr: int, rate: float, ffmpeg: str, flt: str) -> float:
@@ -91,13 +92,13 @@ def render(job_id: str, *, stems: dict[str, float], start: float, end: float, ra
     allowed = set(meta.get("stems", []))
     rate = float(min(2.0, max(0.25, rate)))
     if not stems:
-        raise ValueError("ต้องเลือกอย่างน้อย 1 แทร็ก")
+        raise UserError("err.no_stems")
 
     mix = None
     sr = SR_OUT
     for name, gain in stems.items():
         if name not in allowed:
-            raise ValueError(f"ไม่มีแทร็ก {name}")
+            raise UserError("err.no_such_stem", name=name)
         with sf.SoundFile(d / name) as f:
             sr = f.samplerate
             s0 = max(0, int(start * sr))
@@ -109,7 +110,7 @@ def render(job_id: str, *, stems: dict[str, float], start: float, end: float, ra
         data = data[:, :2] * float(gain)
         mix = data if mix is None else (mix[: min(len(mix), len(data))] + data[: min(len(mix), len(data))])
     if mix is None or len(mix) < sr * 0.2:
-        raise ValueError("ช่วงเวลาสั้นเกินไป")
+        raise UserError("err.range_short")
 
     # short fades at the cut points
     fl = min(len(mix) // 4, int(0.015 * sr))

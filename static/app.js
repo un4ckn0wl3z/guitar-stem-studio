@@ -2,18 +2,17 @@
 'use strict';
 
 const $ = (s) => document.querySelector(s);
-const STEM_INFO = {
-  guitar: { th: 'กีตาร์', c: '#f0a830' },
-  vocals: { th: 'เสียงร้อง', c: '#e2683c' },
-  drums: { th: 'กลอง', c: '#5ca8e2' },
-  bass: { th: 'เบส', c: '#9b7be2' },
-  piano: { th: 'เปียโน', c: '#5cc28a' },
-  other: { th: 'อื่นๆ', c: '#a8a08f' },
-};
+const STEM_COLOR = { guitar: '#f0a830', vocals: '#e2683c', drums: '#5ca8e2', bass: '#9b7be2', piano: '#5cc28a', other: '#a8a08f' };
+const stemColor = (n) => STEM_COLOR[n] || '#888';
+const stemName = (n) => (I18N.en['stem.' + n] ? t('stem.' + n) : n);
 const STEM_ORDER = ['guitar', 'vocals', 'drums', 'bass', 'piano', 'other'];
 
 const fmt = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${m}:${String(s).padStart(2, '0')}`; };
-const api = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText); return r.json(); };
+const api = async (url, opt) => {
+  const r = await fetch(url, opt);
+  if (!r.ok) { const d = (await r.json().catch(() => ({}))).detail; throw new Error(d ? tMsg(Array.isArray(d) ? d[0]?.msg : d) : r.statusText); }
+  return r.json();
+};
 const store = { get(k, d) { try { const v = localStorage.getItem('gs:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem('gs:' + k, JSON.stringify(v)); } catch {} } };
 
 /* ================================================================ LIBRARY */
@@ -31,9 +30,9 @@ function showLibrary() {
 async function refreshJobs() {
   clearTimeout(pollTimer);
   let jobs = [];
-  try { jobs = await api('/api/jobs'); } catch (e) { $('#jobList').innerHTML = `<div class="empty err">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ${e.message}</div>`; return; }
+  try { jobs = await api('/api/jobs'); } catch (e) { $('#jobList').innerHTML = `<div class="empty err">${escapeHtml(t('lib.offline', { msg: e.message }))}</div>`; return; }
   const list = $('#jobList');
-  if (!jobs.length) list.innerHTML = '<div class="empty">ยังไม่มีเพลง — อัปโหลดไฟล์ด้านบนเพื่อเริ่ม</div>';
+  if (!jobs.length) list.innerHTML = `<div class="empty">${escapeHtml(t('lib.empty'))}</div>`;
   else {
     list.innerHTML = '';
     for (const j of jobs) {
@@ -42,17 +41,17 @@ async function refreshJobs() {
       const pct = Math.round((j.progress || 0) * 100);
       let sub;
       if (j.status === 'done') sub = `${fmt(j.duration)} · ~${j.bpm || '?'} BPM`;
-      else if (j.status === 'error') sub = `<span class="err">ผิดพลาด: ${escapeHtml(j.error || '')}</span>`;
-      else sub = `${escapeHtml(j.stage || '')} · ${pct}%`;
+      else if (j.status === 'error') sub = `<span class="err">${escapeHtml(t('lib.error', { msg: tMsg(j.error) }))}</span>`;
+      else sub = `${escapeHtml(tMsg(j.stage))} · ${pct}%`;
       const src = j.url ? ` · <a class="src" href="${escapeHtml(j.url)}" target="_blank" rel="noopener">▶ YouTube</a>` : '';
       el.innerHTML = `<div class="grow"><div class="name">${escapeHtml(j.name)}</div><div class="sub">${sub}${src}</div>
         ${j.status !== 'done' && j.status !== 'error' ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}</div>`;
       if (j.status === 'done' || (j.stems && j.stems.length && j.status !== 'running' && j.status !== 'queued')) {
-        const b = document.createElement('button'); b.textContent = 'เปิด'; b.className = 'on';
+        const b = document.createElement('button'); b.textContent = t('lib.open'); b.className = 'on';
         b.onclick = () => openJob(j.id); el.appendChild(b);
       }
-      const del = document.createElement('button'); del.textContent = 'ลบ';
-      del.onclick = async () => { if (confirm(`ลบ "${j.name}" ?`)) { await api(`/api/jobs/${j.id}`, { method: 'DELETE' }); refreshJobs(); } };
+      const del = document.createElement('button'); del.textContent = t('lib.delete');
+      del.onclick = async () => { if (confirm(t('lib.confirmDelete', { name: j.name }))) { await api(`/api/jobs/${j.id}`, { method: 'DELETE' }); refreshJobs(); } };
       el.appendChild(del);
       list.appendChild(el);
     }
@@ -67,12 +66,16 @@ function uploadFile(file) {
   const fd = new FormData(); fd.append('file', file);
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/upload');
-  xhr.upload.onprogress = (e) => { if (e.lengthComputable) st.textContent = `กำลังอัปโหลด ${file.name} … ${Math.round(e.loaded / e.total * 100)}%`; };
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable) st.textContent = t('up.progress', { name: file.name, pct: Math.round(e.loaded / e.total * 100) }); };
   xhr.onload = () => {
-    if (xhr.status === 200) { st.textContent = `อัปโหลดแล้ว — กำลังประมวลผล (ครั้งแรกจะดาวน์โหลดโมเดล AI ~80MB)`; refreshJobs(); }
-    else st.innerHTML = `<span class="err">อัปโหลดไม่สำเร็จ: ${escapeHtml(xhr.responseText)}</span>`;
+    if (xhr.status === 200) { st.textContent = t('up.done'); refreshJobs(); }
+    else {
+      let msg = xhr.responseText;
+      try { msg = tMsg(JSON.parse(xhr.responseText).detail); } catch {}
+      st.innerHTML = `<span class="err">${escapeHtml(t('up.failMsg', { msg }))}</span>`;
+    }
   };
-  xhr.onerror = () => { st.innerHTML = '<span class="err">อัปโหลดไม่สำเร็จ</span>'; };
+  xhr.onerror = () => { st.innerHTML = `<span class="err">${escapeHtml(t('up.fail'))}</span>`; };
   xhr.send(fd);
 }
 
@@ -80,11 +83,11 @@ $('#ytForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = $('#ytUrl').value.trim(); if (!url) return;
   const st = $('#uploadStatus');
-  st.textContent = 'กำลังเริ่มดาวน์โหลดจาก YouTube…';
+  st.textContent = t('yt.starting');
   try {
     await api('/api/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
     $('#ytUrl').value = '';
-    st.textContent = 'เพิ่มในคิวแล้ว — ดาวน์โหลด → แยกเสียง → ถอด Tab อัตโนมัติ';
+    st.textContent = t('yt.queued');
     refreshJobs();
   } catch (err) { st.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`; }
 });
@@ -174,7 +177,7 @@ let settings = {};
 
 async function openJob(id) {
   const meta = await api(`/api/jobs/${id}`);
-  if (!meta.stems?.length) return alert('ยังประมวลผลไม่เสร็จ');
+  if (!meta.stems?.length) return alert(t('notReady'));
   job = meta;
   $('#libraryView').classList.add('hidden');
   $('#playerView').classList.remove('hidden');
@@ -217,20 +220,20 @@ async function loadAnalysis() {
 /* ================================================================ MIXER */
 function buildMixer() {
   const mx = $('#mixer'); mx.innerHTML = '';
-  for (const t of engine.tracks) {
-    const info = STEM_INFO[t.name] || { th: t.name, c: '#888' };
+  const dlTxt = t('stem.dl');
+  for (const tr of engine.tracks) {
     const el = document.createElement('div');
-    el.className = 'strip'; el.style.setProperty('--c', info.c);
-    el.innerHTML = `<div class="top"><span class="nm">${info.th}</span><span class="btns"><button class="m" title="Mute">M</button><button class="s" title="Solo">S</button></span></div>
+    el.className = 'strip'; el.style.setProperty('--c', stemColor(tr.name));
+    el.innerHTML = `<div class="top"><span class="nm" data-stem-name="${tr.name}">${escapeHtml(stemName(tr.name))}</span><span class="btns"><button class="m" title="Mute">M</button><button class="s" title="Solo">S</button></span></div>
       <div class="vol"><input type="range" min="0" max="150" value="100"><span>100%</span></div>
       <div class="meter"><i></i></div>
-      <a href="/api/jobs/${job.id}/stem/${encodeURIComponent(t.file || t.name)}?download=1">⬇ ดาวน์โหลดแทร็กนี้</a>`;
+      <a href="/api/jobs/${job.id}/stem/${encodeURIComponent(tr.file || tr.name)}?download=1" data-i18n="stem.dl">${dlTxt}</a>`;
     const [mB, sB] = el.querySelectorAll('button');
     const range = el.querySelector('input'), lbl = el.querySelector('.vol span');
-    range.oninput = () => { t.vol = range.value / 100; lbl.textContent = range.value + '%'; engine.applyGains(); };
-    mB.onclick = () => { t.mute = !t.mute; mB.classList.toggle('on', t.mute); engine.applyGains(); };
-    sB.onclick = () => { t.solo = !t.solo; sB.classList.toggle('on', t.solo); engine.applyGains(); };
-    t.ui = { el, mB, sB, range, lbl, meter: el.querySelector('.meter i') };
+    range.oninput = () => { tr.vol = range.value / 100; lbl.textContent = range.value + '%'; engine.applyGains(); };
+    mB.onclick = () => { tr.mute = !tr.mute; mB.classList.toggle('on', tr.mute); engine.applyGains(); };
+    sB.onclick = () => { tr.solo = !tr.solo; sB.classList.toggle('on', tr.solo); engine.applyGains(); };
+    tr.ui = { el, mB, sB, range, lbl, meter: el.querySelector('.meter i') };
     mx.appendChild(el);
   }
 }
@@ -253,12 +256,11 @@ const fmtPrecise = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60
 function buildBacking() {
   const box = $('#bkStems'); box.innerHTML = '';
   const saved = settings.bkStems;
-  for (const t of engine.tracks) {
-    const info = STEM_INFO[t.name] || { th: t.name, c: '#888' };
-    const on = saved ? saved.includes(t.name) : t.name !== 'guitar';
+  for (const tr of engine.tracks) {
+    const on = saved ? saved.includes(tr.name) : tr.name !== 'guitar';
     const lab = document.createElement('label');
-    lab.className = 'chip-check' + (on ? '' : ' off'); lab.style.setProperty('--c', info.c);
-    lab.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''} data-stem="${t.name}"> ${info.th}`;
+    lab.className = 'chip-check' + (on ? '' : ' off'); lab.style.setProperty('--c', stemColor(tr.name));
+    lab.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''} data-stem="${tr.name}"> <span data-stem-name="${tr.name}">${escapeHtml(stemName(tr.name))}</span>`;
     lab.querySelector('input').onchange = (e) => {
       lab.classList.toggle('off', !e.target.checked);
       settings.bkStems = [...box.querySelectorAll('input:checked')].map((i) => i.dataset.stem); saveSettings();
@@ -271,11 +273,11 @@ function buildBacking() {
 function setBkRange(a, b) { $('#bkStart').value = fmtPrecise(a); $('#bkEnd').value = fmtPrecise(b); }
 $('#bkToggle').onclick = () => {
   const hid = $('#bkBody').classList.toggle('hidden');
-  $('#bkToggle').textContent = hid ? 'แสดง' : 'ซ่อน';
+  $('#bkToggle').dataset.i18n = hid ? 'show' : 'hide'; $('#bkToggle').textContent = t(hid ? 'show' : 'hide');
   if (!hid) { $('#bkRate').value = $('#rate').value; $('#bkRateVal').textContent = $('#rate').value + '%'; if (loop.a != null && loop.b != null) setBkRange(loop.a, loop.b); }
 };
 $('#bkAll').onclick = () => setBkRange(0, engine.duration);
-$('#bkAB').onclick = () => { if (loop.a == null || loop.b == null) return alert('ยังไม่ได้ตั้งช่วง A–B'); setBkRange(loop.a, loop.b); };
+$('#bkAB').onclick = () => { if (loop.a == null || loop.b == null) return alert(t('bk.noAB')); setBkRange(loop.a, loop.b); };
 $('#bkNowS').onclick = () => { $('#bkStart').value = fmtPrecise(engine.time); };
 $('#bkNowE').onclick = () => { $('#bkEnd').value = fmtPrecise(engine.time); };
 $('#bkRate').oninput = () => { $('#bkRateVal').textContent = $('#bkRate').value + '%'; };
@@ -285,17 +287,17 @@ $('#bkGo').onclick = async () => {
   const st = $('#bkStatus');
   let a = parseTime($('#bkStart').value), b = parseTime($('#bkEnd').value);
   const dur = engine.duration;
-  if (a == null || b == null) { st.textContent = 'รูปแบบเวลาไม่ถูก ใช้ นาที:วินาที เช่น 1:23.5'; return; }
+  if (a == null || b == null) { st.textContent = t('bk.badTime'); return; }
   a = Math.max(0, Math.min(a, dur)); b = Math.max(0, Math.min(b || dur, dur));
   if ($('#bkSnap').checked && grid.length) {
     const bpb = settings.bpb;
     const sa = timeAtBeat(Math.round(beatAt(a) / bpb) * bpb), sb = timeAtBeat(Math.round(beatAt(b) / bpb) * bpb);
     if (sb - sa > 0.5) { a = Math.max(0, sa); b = Math.min(dur, sb); }
   }
-  if (b - a < 0.5) { st.textContent = 'ช่วงเวลาสั้นเกินไป'; return; }
+  if (b - a < 0.5) { st.textContent = t('err.range_short'); return; }
   setBkRange(a, b);
   const chosen = [...$('#bkStems').querySelectorAll('input:checked')].map((i) => i.dataset.stem);
-  if (!chosen.length) { st.textContent = 'เลือกอย่างน้อย 1 แทร็ก'; return; }
+  if (!chosen.length) { st.textContent = t('err.no_stems'); return; }
   const stems = {};
   for (const t of engine.tracks) if (chosen.includes(t.name)) stems[t.file] = t.vol;
   // beat times inside the range (for count-in tempo + metronome clicks)
@@ -307,7 +309,7 @@ $('#bkGo').onclick = async () => {
     metronome: $('#bkMetro').checked, click_gain: $('#bkClick').value / 100,
     beats, bpb, first_downbeat_index: (((-i0) % bpb) + bpb) % bpb, fmt: $('#bkFmt').value,
   };
-  $('#bkGo').disabled = true; st.textContent = 'กำลังสร้าง… (เพลงยาว/ช้ามากอาจใช้เวลาสักครู่)';
+  $('#bkGo').disabled = true; st.textContent = t('bk.making');
   try {
     const r = await api(`/api/jobs/${job.id}/backing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const url = `/api/jobs/${job.id}/backing/${r.file}`;
@@ -315,8 +317,8 @@ $('#bkGo').onclick = async () => {
     $('#bkDl').href = `${url}?name=${encodeURIComponent(r.name)}`;
     $('#bkDl').setAttribute('download', r.name);
     $('#bkResult').classList.remove('hidden');
-    st.textContent = `เสร็จแล้ว: ${r.name}`;
-  } catch (e) { st.innerHTML = `<span class="err">สร้างไม่สำเร็จ: ${escapeHtml(e.message)}</span>`; }
+    st.textContent = t('bk.done', { name: r.name });
+  } catch (e) { st.innerHTML = `<span class="err">${escapeHtml(t('bk.fail', { msg: e.message }))}</span>`; }
   finally { $('#bkGo').disabled = false; }
 };
 
@@ -361,9 +363,9 @@ $('#master').oninput = () => { $('#masterVal').textContent = $('#master').value 
 function updateLoopUI() {
   const r = $('#loopRegion');
   const { a, b, on } = loop;
-  $('#loopToggle').textContent = 'วน: ' + (on ? 'เปิด' : 'ปิด');
+  $('#loopToggle').textContent = t('loop.btn', { state: t(on ? 'on' : 'off') });
   $('#loopToggle').classList.toggle('on', on);
-  $('#loopVal').textContent = a != null && b != null ? `${fmt(a)} – ${fmt(b)}${on ? '' : ' (ปิด)'}` : a != null ? `A ${fmt(a)}` : 'ปิด';
+  $('#loopVal').textContent = a != null && b != null ? `${fmt(a)} – ${fmt(b)}${on ? '' : t('offParen')}` : a != null ? `A ${fmt(a)}` : t('off');
   if (a != null && b != null && engine?.duration) {
     r.classList.remove('hidden');
     r.style.left = (a / engine.duration * 100) + '%';
@@ -457,7 +459,7 @@ function flashDot(i, delayMs) {
     d.classList.add('hit'); setTimeout(() => d.classList.remove('hit'), 110);
   }, Math.max(0, delayMs));
 }
-function setMetro(on) { metro.on = on; $('#metroToggle').textContent = on ? 'เปิด' : 'ปิด'; $('#metroToggle').classList.toggle('on', on); metroReset(); }
+function setMetro(on) { metro.on = on; $('#metroToggle').textContent = t(on ? 'on' : 'off'); $('#metroToggle').classList.toggle('on', on); metroReset(); }
 $('#metroToggle').onclick = () => setMetro(!metro.on);
 $('#metroVol').oninput = () => { metro.vol = $('#metroVol').value / 100; $('#metroVolVal').textContent = $('#metroVol').value + '%'; };
 $('#metroMode').onchange = () => { settings.metroMode = $('#metroMode').value; $('#metroBpm').disabled = settings.metroMode !== 'manual'; saveSettings(); rebuildGrid(); metroReset(); };
@@ -476,16 +478,16 @@ $('#dbOffset').onchange = () => { settings.dbOffset = +$('#dbOffset').value; sav
 /* ================================================================ UI LOOP */
 function frame() {
   if (engine && !$('#playerView').classList.contains('hidden')) {
-    const t = engine.time;
-    if (loop.on && loop.a != null && loop.b != null && engine.playing && t >= loop.b) seekTo(loop.a);
+    const now = engine.time;
+    if (loop.on && loop.a != null && loop.b != null && engine.playing && now >= loop.b) seekTo(loop.a);
     if (!seeking) {
-      $('#curTime').textContent = fmt(t);
-      if (engine.duration) $('#seek').value = Math.round(t / engine.duration * 1000);
+      $('#curTime').textContent = fmt(now);
+      if (engine.duration) $('#seek').value = Math.round(now / engine.duration * 1000);
     }
     if (grid.length) {
-      const bf = beatAt(t);
+      const bf = beatAt(now);
       const bar = Math.floor(bf / settings.bpb) + 1, beat = ((Math.floor(bf) % settings.bpb) + settings.bpb) % settings.bpb + 1;
-      $('#posInfo').textContent = `ห้อง ${bar} · จังหวะ ${beat}`;
+      $('#posInfo').textContent = t('pos', { bar, beat });
     }
     for (const tr of engine.tracks) if (tr.ui) tr.ui.meter.style.width = engine.playing ? Math.min(100, engine.level(tr) * 140) + '%' : '0%';
   }
@@ -508,6 +510,19 @@ document.addEventListener('keydown', (e) => {
   else if (k === '-') setRate(+$('#rate').value - 5);
   else if (k === '+' || k === '=') setRate(+$('#rate').value + 5);
 });
+
+/* language switch */
+document.querySelectorAll('[data-lang]').forEach((b) => (b.onclick = () => setLang(b.dataset.lang)));
+document.addEventListener('langchange', () => {
+  document.querySelectorAll('[data-stem-name]').forEach((el) => { el.textContent = stemName(el.dataset.stemName); });
+  updateLoopUI();
+  setMetro(metro.on);
+  if (!$('#libraryView').classList.contains('hidden')) refreshJobs();
+  if (job && !$('#bkStatus').querySelector('.err')) $('#bkStatus').textContent = '';
+});
+applyI18n();
+updateLoopUI();
+setMetro(false);
 
 /* boot */
 if (location.hash.length > 1) openJob(location.hash.slice(1)).catch(() => showLibrary());

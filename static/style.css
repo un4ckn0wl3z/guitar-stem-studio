@@ -115,3 +115,11 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .bk-body .ctl > label:first-child{justify-content:flex-start;gap:6px}
 .ctl label.check{justify-content:flex-start;gap:6px;color:var(--text);font-size:14px;margin:8px 0 0}
 .inline{display:flex;gap:6px;flex-wrap:wrap}
+/* language switch */
+.topbar-right{display:flex;align-items:center;gap:12px;min-width:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex-shrink:0}
+.seg button{border:none;border-radius:0;background:var(--panel2);padding:4px 10px;font-size:13px;font-weight:600}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:#1a1307}
+.brand{white-space:nowrap}
+@media (max-width:560px){.song-title{display:none}.topbar{padding:10px 14px}}

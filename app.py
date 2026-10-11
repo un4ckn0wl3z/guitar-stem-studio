@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import processing as P
+from i18n import UserError
 
 BASE = Path(__file__).parent
 ALLOWED = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
@@ -46,7 +47,7 @@ def index():
 async def upload(file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED:
-        raise HTTPException(400, f"รองรับเฉพาะ {', '.join(sorted(ALLOWED))}")
+        raise HTTPException(400, {"key": "err.bad_ext", "params": {"exts": ", ".join(sorted(ALLOWED))}})
     fd, tmp = tempfile.mkstemp(suffix=ext)
     with os.fdopen(fd, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -62,7 +63,7 @@ class UrlReq(BaseModel):
 def from_youtube(req: UrlReq):
     url = req.url.strip()
     if not re.match(r"^https?://", url):
-        raise HTTPException(400, "ลิงก์ไม่ถูกต้อง (ต้องขึ้นต้นด้วย http:// หรือ https://)")
+        raise HTTPException(400, {"key": "err.bad_url", "params": {}})
     return {"id": P.create_job_from_url(url)}
 
 
@@ -118,15 +119,15 @@ def backing_export(job_id: str, req: BackingReq):
 
     m = _meta_or_404(job_id)
     if m.get("status") != "done" and not m.get("stems"):
-        raise HTTPException(409, "ยังประมวลผลไม่เสร็จ")
+        raise HTTPException(409, {"key": "err.not_ready", "params": {}})
     fmt = "wav" if req.fmt == "wav" else "mp3"
     try:
         out = backing.render(job_id, stems=req.stems, start=max(0.0, req.start), end=req.end, rate=req.rate,
                              count_in_bars=max(0, min(4, req.count_in_bars)), metronome=req.metronome,
                              click_gain=max(0.0, min(2.0, req.click_gain)), beats=req.beats,
                              bpb=max(1, min(12, req.bpb)), first_downbeat_index=req.first_downbeat_index, fmt=fmt)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except UserError as e:
+        raise HTTPException(400, e.to_dict())
     name = backing.nice_name(m["name"], list(req.stems), m.get("stems", []), req.start,
                              req.end or float(m.get("duration") or 0), req.rate, req.count_in_bars, fmt)
     return {"file": out.name, "name": name}
@@ -139,7 +140,7 @@ def backing_file(job_id: str, file: str, name: str | None = None):
         raise HTTPException(400, "bad file")
     p = P.job_dir(job_id) / "exports" / file
     if not p.exists():
-        raise HTTPException(404, "ไฟล์หมดอายุ — กดสร้างใหม่")
+        raise HTTPException(404, {"key": "err.expired", "params": {}})
     return FileResponse(p, filename=name) if name else FileResponse(p)
 
 

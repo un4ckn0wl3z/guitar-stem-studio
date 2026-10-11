@@ -9,7 +9,9 @@
 <body>
 <header class="topbar">
   <div class="brand" id="homeBtn"><span class="logo">◉</span> Guitar Stem Studio</div>
-  <div class="topbar-right"><span id="songTitle" class="song-title"></span></div>
+  <div class="topbar-right"><span id="songTitle" class="song-title"></span>
+    <div class="seg lang" role="group" aria-label="Language"><button data-lang="th">TH</button><button data-lang="en">EN</button></div>
+  </div>
 </header>
 
 <!-- ============ LIBRARY ============ -->
@@ -17,32 +19,32 @@
   <label id="drop" class="drop">
     <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.flac,.ogg,.aac" hidden>
     <div class="drop-icon">♫</div>
-    <div class="drop-title">ลากไฟล์ MP3 มาวาง หรือคลิกเพื่อเลือก</div>
-    <div class="drop-sub">AI จะแยกเป็น 6 แทร็ก: กีตาร์ · เสียงร้อง · กลอง · เบส · เปียโน · อื่นๆ</div>
+    <div class="drop-title" data-i18n="drop.title"></div>
+    <div class="drop-sub" data-i18n="drop.sub"></div>
   </label>
   <form id="ytForm" class="yt-form">
     <span class="yt-badge">▶ YouTube</span>
-    <input type="url" id="ytUrl" placeholder="วางลิงก์ YouTube / YouTube Music เช่น https://music.youtube.com/watch?v=..." autocomplete="off" required>
-    <button type="submit" class="on">โหลดเพลง</button>
+    <input type="url" id="ytUrl" data-i18n-ph="yt.ph" autocomplete="off" required>
+    <button type="submit" class="on" data-i18n="yt.go"></button>
   </form>
   <div id="uploadStatus" class="upload-status"></div>
-  <h2 class="section-h">เพลงของฉัน</h2>
-  <div id="jobList" class="job-list"><div class="empty">ยังไม่มีเพลง</div></div>
+  <h2 class="section-h" data-i18n="lib.title"></h2>
+  <div id="jobList" class="job-list"></div>
 </main>
 
 <!-- ============ PLAYER ============ -->
 <main id="playerView" class="view hidden">
-  <div id="loadingOverlay" class="loading hidden">กำลังโหลดแทร็ก…</div>
+  <div id="loadingOverlay" class="loading hidden" data-i18n="loading"></div>
 
   <!-- transport -->
   <section class="card transport">
     <div class="tr-row">
-      <button id="backBtn" class="icon-btn" title="กลับไปหน้าเพลง">←</button>
-      <button id="rewBtn" class="icon-btn" title="ย้อน 5 วิ (←)">⟲5</button>
-      <button id="playBtn" class="play-btn" title="เล่น/หยุด (Space)">▶</button>
-      <button id="fwdBtn" class="icon-btn" title="ไปข้างหน้า 5 วิ (→)">5⟳</button>
+      <button id="backBtn" class="icon-btn" data-i18n-title="t.back">←</button>
+      <button id="rewBtn" class="icon-btn" data-i18n-title="t.rew">⟲5</button>
+      <button id="playBtn" class="play-btn" data-i18n-title="t.play">▶</button>
+      <button id="fwdBtn" class="icon-btn" data-i18n-title="t.fwd">5⟳</button>
       <div class="time"><span id="curTime">0:00</span> / <span id="durTime">0:00</span></div>
-      <div class="pos-info" id="posInfo">ห้อง 1 · จังหวะ 1</div>
+      <div class="pos-info" id="posInfo"></div>
     </div>
     <div class="seek-wrap">
       <div id="loopRegion" class="loop-region hidden"></div>
@@ -50,23 +52,23 @@
     </div>
     <div class="tr-grid">
       <div class="ctl">
-        <label>ความเร็ว <b id="rateVal">100%</b></label>
+        <label><span data-i18n="speed"></span> <b id="rateVal">100%</b></label>
         <input type="range" id="rate" min="25" max="150" value="100" step="5">
         <div class="chips">
           <button data-rate="50">50%</button><button data-rate="75">75%</button><button data-rate="90">90%</button><button data-rate="100">100%</button>
         </div>
       </div>
       <div class="ctl">
-        <label>เสียงรวม (Master) <b id="masterVal">100%</b></label>
+        <label><span data-i18n="master"></span> <b id="masterVal">100%</b></label>
         <input type="range" id="master" min="0" max="150" value="100">
         <div class="chips">
-          <button id="presetAll">ทุกแทร็ก</button><button id="presetGuitar">เฉพาะกีตาร์</button><button id="presetBacking">ตัดกีตาร์ (Backing)</button>
+          <button id="presetAll" data-i18n="p.all"></button><button id="presetGuitar" data-i18n="p.guitar"></button><button id="presetBacking" data-i18n="p.backing"></button>
         </div>
       </div>
       <div class="ctl">
-        <label>วนซ้ำ A–B <b id="loopVal">ปิด</b></label>
+        <label><span data-i18n="loop"></span> <b id="loopVal"></b></label>
         <div class="chips">
-          <button id="setA">ตั้ง A</button><button id="setB">ตั้ง B</button><button id="loopToggle">วน: ปิด</button><button id="loopClear">ล้าง</button>
+          <button id="setA" data-i18n="loop.a"></button><button id="setB" data-i18n="loop.b"></button><button id="loopToggle"></button><button id="loopClear" data-i18n="loop.clear"></button>
         </div>
       </div>
     </div>
@@ -74,79 +76,79 @@
 
   <!-- mixer -->
   <section class="card">
-    <h3>มิกเซอร์ (Volume แต่ละแทร็ก)</h3>
+    <h3 data-i18n="mixer"></h3>
     <div id="mixer" class="mixer"></div>
   </section>
 
   <!-- backing track export -->
   <section class="card backing">
     <div class="bk-head">
-      <h3>Export Backing Track <span class="muted">— เลือกแทร็ก ช่วงเวลา ความเร็ว แล้วดาวน์โหลดไปซ้อม</span></h3>
-      <button id="bkToggle" class="small-btn">แสดง</button>
+      <h3>Export Backing Track <span class="muted" data-i18n="bk.sub"></span></h3>
+      <button id="bkToggle" class="small-btn" data-i18n="show"></button>
     </div>
     <div id="bkBody" class="bk-body hidden">
       <div class="bk-row">
         <div class="ctl">
-          <label>แทร็กที่จะใส่ <span class="muted">(ระดับเสียงตามมิกเซอร์)</span></label>
+          <label><span data-i18n="bk.stems"></span> <span class="muted" data-i18n="bk.stems.note"></span></label>
           <div id="bkStems" class="chips"></div>
         </div>
       </div>
       <div class="bk-row">
         <div class="ctl">
-          <label>ช่วงเวลา</label>
+          <label data-i18n="bk.range"></label>
           <div class="inline bk-range">
-            <input id="bkStart" class="time-in" value="0:00.0" title="เริ่ม (นาที:วินาที)"> <span>ถึง</span>
-            <input id="bkEnd" class="time-in" value="0:00.0" title="จบ (นาที:วินาที)">
-            <button id="bkAll">ทั้งเพลง</button><button id="bkAB">ใช้ช่วง A–B</button>
-            <button id="bkNowS">เริ่ม = ตอนนี้</button><button id="bkNowE">จบ = ตอนนี้</button>
+            <input id="bkStart" class="time-in" value="0:00.0" data-i18n-title="bk.start.t"> <span data-i18n="bk.to"></span>
+            <input id="bkEnd" class="time-in" value="0:00.0" data-i18n-title="bk.end.t">
+            <button id="bkAll" data-i18n="bk.all"></button><button id="bkAB" data-i18n="bk.ab"></button>
+            <button id="bkNowS" data-i18n="bk.nows"></button><button id="bkNowE" data-i18n="bk.nowe"></button>
           </div>
-          <label class="check"><input type="checkbox" id="bkSnap" checked> ปัดให้ตรงต้นห้อง/ท้ายห้อง</label>
+          <label class="check"><input type="checkbox" id="bkSnap" checked> <span data-i18n="bk.snap"></span></label>
         </div>
       </div>
       <div class="bk-row">
         <div class="ctl small">
-          <label>ความเร็ว <b id="bkRateVal">100%</b></label>
+          <label><span data-i18n="speed"></span> <b id="bkRateVal">100%</b></label>
           <input type="range" id="bkRate" min="25" max="150" step="5" value="100">
         </div>
         <div class="ctl small">
-          <label>นับนำ (count-in)</label>
-          <select id="bkCount"><option value="0">ไม่มี</option><option value="1" selected>1 ห้อง</option><option value="2">2 ห้อง</option></select>
+          <label data-i18n="countin"></label>
+          <select id="bkCount"><option value="0" data-i18n="none"></option><option value="1" selected data-i18n="bar1"></option><option value="2" data-i18n="bar2"></option></select>
         </div>
-        <label class="check"><input type="checkbox" id="bkMetro"> ใส่เมโทรนอมตลอดเพลง</label>
+        <label class="check"><input type="checkbox" id="bkMetro"> <span data-i18n="bk.metro"></span></label>
         <div class="ctl small">
-          <label>เสียงคลิก <b id="bkClickVal">80%</b></label>
+          <label><span data-i18n="click"></span> <b id="bkClickVal">80%</b></label>
           <input type="range" id="bkClick" min="0" max="150" value="80">
         </div>
         <div class="ctl small">
-          <label>ไฟล์</label>
+          <label data-i18n="file"></label>
           <select id="bkFmt"><option value="mp3">MP3</option><option value="wav">WAV</option></select>
         </div>
       </div>
       <div class="bk-row bk-go">
-        <button id="bkGo" class="on">สร้าง Backing Track</button>
+        <button id="bkGo" class="on" data-i18n="bk.go"></button>
         <span id="bkStatus" class="muted"></span>
       </div>
       <div id="bkResult" class="bk-result hidden">
         <audio id="bkAudio" controls preload="none"></audio>
-        <a id="bkDl" class="dl-btn" href="#">⬇ ดาวน์โหลด</a>
+        <a id="bkDl" class="dl-btn" href="#" data-i18n="download"></a>
       </div>
     </div>
   </section>
 
   <!-- metronome -->
   <section class="card metro">
-    <h3>เมโทรนอม</h3>
+    <h3 data-i18n="metro"></h3>
     <div class="metro-row">
-      <button id="metroToggle" class="toggle">ปิด</button>
+      <button id="metroToggle" class="toggle"></button>
       <div class="ctl small">
-        <label>เสียงคลิก <b id="metroVolVal">80%</b></label>
+        <label><span data-i18n="click"></span> <b id="metroVolVal">80%</b></label>
         <input type="range" id="metroVol" min="0" max="150" value="80">
       </div>
       <div class="ctl small">
-        <label>โหมด</label>
+        <label data-i18n="mode"></label>
         <select id="metroMode">
-          <option value="song">ตามจังหวะเพลง (auto)</option>
-          <option value="manual">กำหนด BPM เอง</option>
+          <option value="song" data-i18n="mode.song"></option>
+          <option value="manual" data-i18n="mode.manual"></option>
         </select>
       </div>
       <div class="ctl small">
@@ -154,21 +156,22 @@
         <input type="number" id="metroBpm" min="30" max="300" step="0.5" value="120">
       </div>
       <div class="ctl small">
-        <label>จังหวะ/ห้อง</label>
+        <label data-i18n="bpb"></label>
         <select id="beatsPerBar"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
       </div>
       <div class="ctl small">
-        <label>เลื่อนจังหวะ 1 ของห้อง</label>
+        <label data-i18n="shift1"></label>
         <select id="dbOffset"><option value="0">0</option><option value="1">+1 beat</option><option value="2">+2 beat</option><option value="3">+3 beat</option></select>
       </div>
-      <label class="check"><input type="checkbox" id="countIn"> นับนำ 1 ห้อง</label>
+      <label class="check"><input type="checkbox" id="countIn"> <span data-i18n="countin1"></span></label>
       <div class="beat-dots" id="beatDots"></div>
     </div>
   </section>
 
-  <footer class="kbd">คีย์ลัด: <b>Space</b> เล่น/หยุด · <b>← →</b> ±5 วิ · <b>[ ]</b> ตั้ง A/B · <b>L</b> วนซ้ำ · <b>M</b> เมโทรนอม · <b>- +</b> ความเร็ว</footer>
+  <footer class="kbd" data-i18n-html="keys"></footer>
 </main>
 
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

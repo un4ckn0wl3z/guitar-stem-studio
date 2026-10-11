@@ -18,6 +18,7 @@ Everything runs on your own machine. No audio is uploaded anywhere (except the Y
 | **A–B loop** | Loop any section; set the points with buttons or the `[` `]` keys. |
 | **Metronome** | Follows the song's real beats (beat tracking snapped onto the drum hits), or uses a fixed BPM. Choose beats per bar, shift beat 1, and add an optional 1-bar count-in. |
 | **Backing track export** | Pick stems (guitar off by default) and a time range (or the A–B loop), set the speed, add a 1–2 bar count-in and an optional metronome, then download MP3 or WAV. Clicks are compensated for time-stretch latency so they land on the drums. |
+| **Thai / English UI** | Switch language with the **TH / EN** toggle in the top bar. The choice is remembered, and the first visit follows the browser language. |
 | **YouTube / YouTube Music** | Paste a link and the song is downloaded and processed automatically ([yt-dlp](https://github.com/yt-dlp/yt-dlp) with a bundled ffmpeg). |
 
 ### Library: upload an MP3 or paste a YouTube link
@@ -31,8 +32,6 @@ Everything runs on your own machine. No audio is uploaded anywhere (except the Y
 
 <img src="docs/images/mobile.png" width="320" alt="Mobile">
 </details>
-
-> The UI is currently in Thai.
 
 ## Install
 
@@ -77,6 +76,10 @@ python app.py
 
 `Space` play/pause · `← →` ±5 s · `[` `]` set A/B · `L` toggle loop · `M` metronome · `-` `+` speed
 
+## Adding a language
+
+Add a new block next to `th` and `en` in [`static/i18n.js`](static/i18n.js) with the same keys, then add a button to the language toggle in `static/index.html`. Missing keys fall back to English.
+
 ## Configuration
 
 | Env var | Default | |
@@ -94,7 +97,8 @@ python app.py
 app.py          FastAPI server + REST API
 processing.py   Pipeline: download → Demucs separation → beat tracking (snapped to drum hits)
 backing.py      Backing-track renderer (mix, time-stretch, count-in, metronome)
-static/         Web UI (vanilla JS, Web Audio)
+i18n.py         Language-neutral error/message keys sent to the UI
+static/         Web UI (vanilla JS, Web Audio); translations in static/i18n.js
 ```
 
 ## Notes

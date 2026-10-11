@@ -13,6 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
+from i18n import UserError
+
 
 DATA_DIR = Path(os.environ.get("GS_DATA_DIR", Path(__file__).parent / "data" / "jobs"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,7 +76,7 @@ def create_job(filename: str, src_path: Path) -> str:
         name=Path(filename).stem,
         source=dst.name,
         status="queued",
-        stage="รอคิว",
+        stage="queued",
         progress=0.0,
         created=time.time(),
         stems=[],
@@ -94,7 +96,7 @@ def create_job_from_url(url: str) -> str:
         url=url,
         source=None,
         status="queued",
-        stage="รอคิว (ดาวน์โหลด)",
+        stage="queued_download",
         progress=0.0,
         created=time.time(),
         stems=[],
@@ -119,6 +121,8 @@ def _worker():
                 run_full(job_id)
             elif kind == "full":
                 run_full(job_id)
+        except UserError as e:
+            write_meta(job_id, status="error", error=e.to_dict())
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             write_meta(job_id, status="error", error=f"{type(e).__name__}: {e}")
@@ -194,20 +198,20 @@ def run_download(job_id: str):
 
     meta = read_meta(job_id)
     d = job_dir(job_id)
-    write_meta(job_id, status="running", stage="กำลังดึงข้อมูลวิดีโอ", progress=0.0)
+    write_meta(job_id, status="running", stage="fetching", progress=0.0)
 
     def hook(st):
         if st.get("status") == "downloading":
             total = st.get("total_bytes") or st.get("total_bytes_estimate") or 0
             frac = (st.get("downloaded_bytes", 0) / total) if total else 0
-            write_meta(job_id, stage="กำลังดาวน์โหลดจาก YouTube", progress=0.04 * frac)
+            write_meta(job_id, stage="downloading", progress=0.04 * frac)
         elif st.get("status") == "finished":
-            write_meta(job_id, stage="กำลังแปลงเป็น MP3", progress=0.045)
+            write_meta(job_id, stage="converting", progress=0.045)
 
     def too_long(info, *, incomplete=False):
         dur = info.get("duration")
         if dur and dur > MAX_MINUTES * 60:
-            return f"วิดีโอยาว {dur / 60:.0f} นาที เกินกำหนด {MAX_MINUTES:.0f} นาที (ตั้ง GS_MAX_MINUTES เพื่อเพิ่ม)"
+            return f"too long: {dur / 60:.0f} min > {MAX_MINUTES:.0f} min"
         return None
 
     opts = {
@@ -236,10 +240,12 @@ def run_download(job_id: str):
                 info = next((e for e in info["entries"] if e), None)
     except yt_dlp.utils.DownloadError as e:
         msg = str(e).replace("ERROR: ", "").split("; please report")[0]
-        raise RuntimeError(f"ดาวน์โหลดไม่สำเร็จ: {msg} — ถ้าลิงก์ถูกต้อง ลองรัน update.bat เพื่ออัปเดตตัวโหลด YouTube") from None
+        raise UserError("err.download", msg=msg) from None
     if info is None or not (d / "original.mp3").exists():
-        reason = too_long(info or {}) if info else None
-        raise RuntimeError(reason or "ดาวน์โหลดไม่สำเร็จ (ตรวจสอบลิงก์ หรืออัปเดต yt-dlp: pip install -U yt-dlp)")
+        dur = (info or {}).get("duration")
+        if dur and dur > MAX_MINUTES * 60:
+            raise UserError("err.too_long", minutes=round(dur / 60), max=round(MAX_MINUTES))
+        raise UserError("err.download_failed")
     title = info.get("title") or "YouTube"
     write_meta(job_id, name=title, source="original.mp3", url=info.get("webpage_url", meta["url"]),
                duration=info.get("duration"))
@@ -251,7 +257,7 @@ def run_full(job_id: str):
     meta = read_meta(job_id)
     d = job_dir(job_id)
     src = d / meta["source"]
-    write_meta(job_id, status="running", stage="กำลังโหลดไฟล์เสียง", progress=0.05)
+    write_meta(job_id, status="running", stage="loading", progress=0.05)
     if src.suffix.lower() not in NATIVE_EXTS:  # m4a / aac / webm ... -> mp3
         src = to_mp3(src)
         write_meta(job_id, source=src.name)
@@ -259,11 +265,11 @@ def run_full(job_id: str):
     import librosa
 
     # ---- separation
-    stems = separate(src, d, lambda p: write_meta(job_id, stage="กำลังแยกเสียง (AI)", progress=0.05 + 0.83 * p))
+    stems = separate(src, d, lambda p: write_meta(job_id, stage="separating", progress=0.05 + 0.83 * p))
     write_meta(job_id, stems=stems)
 
     # ---- beats / tempo on the original mix (more reliable than drums alone)
-    write_meta(job_id, stage="กำลังหาจังหวะ (beat)", progress=0.9)
+    write_meta(job_id, stage="beats", progress=0.9)
     y, sr = librosa.load(str(src), sr=22050, mono=True)
     duration = float(len(y) / sr)
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames", trim=False)
@@ -275,7 +281,7 @@ def run_full(job_id: str):
     analysis = {"duration": duration, "bpm": round(bpm, 2), "beats": [round(b, 4) for b in beats], "beats_refined": 2}
     (d / "analysis.json").write_text(json.dumps(analysis), "utf-8")
 
-    write_meta(job_id, status="done", stage="เสร็จแล้ว", progress=1.0, duration=duration, bpm=round(bpm, 1))
+    write_meta(job_id, status="done", stage="done", progress=1.0, duration=duration, bpm=round(bpm, 1))
 
 
 def _onsets(y, sr):
