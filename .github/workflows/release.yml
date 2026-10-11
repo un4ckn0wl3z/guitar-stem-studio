@@ -1,0 +1,114 @@
+name: Build & release
+
+# Push a tag like v1.0.0 to build Windows + macOS apps and publish them as a GitHub Release.
+# "Run workflow" (manual) builds the same zips as downloadable artifacts without releasing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            experimental: false
+          - name: macos-arm64          # Apple Silicon (M1/M2/M3/M4)
+            os: macos-14
+            experimental: false
+          - name: macos-x64            # Intel Macs: PyTorch stopped at 2.2.x for this platform
+            os: macos-15-intel
+            experimental: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (Windows, CPU-only PyTorch)
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt pyinstaller
+
+      - name: Install dependencies (macOS Apple Silicon)
+        if: matrix.name == 'macos-arm64'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Install dependencies (macOS Intel)
+        if: matrix.name == 'macos-x64'
+        run: |
+          python -m pip install --upgrade pip
+          echo "numpy<2" > constraints.txt
+          pip install "torch==2.2.2" -c constraints.txt
+          pip install -r requirements.txt pyinstaller -c constraints.txt
+
+      - name: Build with PyInstaller
+        run: pyinstaller guitar-stem-studio.spec --noconfirm
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then EXE=dist/GuitarStemStudio/GuitarStemStudio.exe; else EXE=dist/GuitarStemStudio/GuitarStemStudio; fi
+          python tools/smoke_test.py "$EXE"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cp tools/README-FIRST.txt dist/GuitarStemStudio/
+          cd dist && 7z a -tzip -mx=7 ../GuitarStemStudio-${{ matrix.name }}.zip GuitarStemStudio > /dev/null
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cp tools/README-FIRST.txt dist/GuitarStemStudio/
+          cd dist && ditto -c -k --keepParent GuitarStemStudio ../GuitarStemStudio-${{ matrix.name }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GuitarStemStudio-${{ matrix.name }}
+          path: GuitarStemStudio-${{ matrix.name }}.zip
+          retention-days: 7
+
+  release:
+    needs: build
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: List assets
+        run: ls -lh assets
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## Download
+            | System | File |
+            |---|---|
+            | Windows 10/11 (64-bit) | `GuitarStemStudio-windows-x64.zip` |
+            | macOS, Apple Silicon (M1–M4) | `GuitarStemStudio-macos-arm64.zip` |
+            | macOS, Intel | `GuitarStemStudio-macos-x64.zip` (if present) |
+
+            Unzip, then run **GuitarStemStudio** — see `README-FIRST.txt` inside the zip.
+            The apps are not code-signed: on Windows click *More info → Run anyway*; on macOS run
+            `xattr -dr com.apple.quarantine <folder>` once. The AI model (~80 MB) downloads on first use.

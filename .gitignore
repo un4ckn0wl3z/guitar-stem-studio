@@ -4,3 +4,6 @@ __pycache__/
 data/
 *.zip
 push-to-github.bat
+
+build/
+dist/

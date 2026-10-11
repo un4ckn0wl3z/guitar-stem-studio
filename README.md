@@ -8,6 +8,27 @@ Everything runs on your own machine. No audio is uploaded anywhere (except the Y
 
 ![Player](docs/images/player.png)
 
+## Download (no Python needed)
+
+Grab the latest build from **[Releases](https://github.com/un4ckn0wl3z/guitar-stem-studio/releases/latest)**:
+
+| System | File |
+|---|---|
+| Windows 10/11 (64-bit) | `GuitarStemStudio-windows-x64.zip` |
+| macOS, Apple Silicon (M1–M4) | `GuitarStemStudio-macos-arm64.zip` |
+| macOS, Intel | `GuitarStemStudio-macos-x64.zip` (when available) |
+
+1. Unzip it, then run **GuitarStemStudio** from the folder. Your browser opens the app automatically. Keep the console window open while you use it, and close it to quit.
+2. The builds are not code-signed, so you'll see a warning the first time:
+   - **Windows**: on *"Windows protected your PC"*, click **More info → Run anyway**.
+   - **macOS**: run this once in Terminal, then double-click `GuitarStemStudio`:
+     ```bash
+     xattr -dr com.apple.quarantine ~/Downloads/GuitarStemStudio
+     ```
+3. The first song you process downloads the AI model (~80 MB).
+
+The release builds run on the CPU. For NVIDIA GPU acceleration, install from source (below) with the CUDA build of PyTorch.
+
 ## Features
 
 | | |
@@ -33,7 +54,7 @@ Everything runs on your own machine. No audio is uploaded anywhere (except the Y
 <img src="docs/images/mobile.png" width="320" alt="Mobile">
 </details>
 
-## Install
+## Install from source
 
 Requires **Python 3.10 – 3.13** (3.11 or 3.12 recommended).
 
@@ -80,6 +101,17 @@ python app.py
 
 Add a new block next to `th` and `en` in [`static/i18n.js`](static/i18n.js) with the same keys, then add a button to the language toggle in `static/index.html`. Missing keys fall back to English.
 
+## Releasing
+
+Push a version tag to build the Windows and macOS apps on GitHub Actions and publish a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow is [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds with PyInstaller ([`guitar-stem-studio.spec`](guitar-stem-studio.spec)), smoke-tests each build and attaches the zips to the release. You can also run it manually from the *Actions* tab to get test builds without releasing.
+
 ## Configuration
 
 | Env var | Default | |
@@ -94,6 +126,7 @@ Add a new block next to `th` and `en` in [`static/i18n.js`](static/i18n.js) with
 ## Project layout
 
 ```
+launcher.py     Entry point for the packaged app (data folder, free port, opens browser)
 app.py          FastAPI server + REST API
 processing.py   Pipeline: download → Demucs separation → beat tracking (snapped to drum hits)
 backing.py      Backing-track renderer (mix, time-stretch, count-in, metronome)

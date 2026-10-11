@@ -8,6 +8,27 @@
 ปิดเสียงกีตาร์แล้วเล่นเองได้ ปรับช้าลง วนซ้ำท่อน ใส่เมโทรนอมที่ตามจังหวะเพลง และ export backing track ไปซ้อม
 ทำงานบนเครื่องตัวเอง 100% ผ่านหน้าเว็บ (ไม่ต้องอัปโหลดเพลงขึ้นเน็ต)
 
+## ดาวน์โหลดแบบพร้อมใช้ (ไม่ต้องลง Python)
+
+ดาวน์โหลดจาก **[Releases](https://github.com/un4ckn0wl3z/guitar-stem-studio/releases/latest)**
+
+| เครื่อง | ไฟล์ |
+|---|---|
+| Windows 10/11 (64-bit) | `GuitarStemStudio-windows-x64.zip` |
+| Mac ชิป Apple (M1–M4) | `GuitarStemStudio-macos-arm64.zip` |
+| Mac ชิป Intel | `GuitarStemStudio-macos-x64.zip` (ถ้ามี) |
+
+1. แตกไฟล์ zip แล้วเปิด **GuitarStemStudio** ในโฟลเดอร์ เบราว์เซอร์จะเปิดให้เอง เปิดหน้าต่างดำทิ้งไว้ระหว่างใช้งาน ปิดหน้าต่างนั้นเมื่อจะเลิกใช้
+2. ตัวโปรแกรมยังไม่ได้เซ็นรับรอง ครั้งแรกจะมีคำเตือน:
+   - **Windows**: ขึ้น *"Windows protected your PC"* → กด **More info → Run anyway**
+   - **Mac**: เปิด Terminal แล้วรันคำสั่งนี้ครั้งเดียว จากนั้นดับเบิลคลิก `GuitarStemStudio`
+     ```bash
+     xattr -dr com.apple.quarantine ~/Downloads/GuitarStemStudio
+     ```
+3. เพลงแรกที่ประมวลผล โปรแกรมจะดาวน์โหลดโมเดล AI (~80 MB)
+
+ตัวพร้อมใช้ประมวลผลด้วย CPU ถ้าต้องการใช้การ์ดจอ NVIDIA ให้ติดตั้งจาก source ตามด้านล่าง
+
 ## ฟีเจอร์
 - **เลือกภาษาได้ ไทย / อังกฤษ** — กดปุ่ม **TH / EN** มุมขวาบน (จำค่าไว้ให้ ครั้งแรกจะเลือกตามภาษาของเบราว์เซอร์)
 - **วางลิงก์ YouTube / YouTube Music** แล้วโหลดเพลงเป็น MP3 ให้อัตโนมัติ (ใช้ yt-dlp + ffmpeg ที่ติดมากับโปรแกรม ไม่ต้องติดตั้งเพิ่ม)
@@ -20,7 +41,7 @@
 
 ![Backing track](docs/images/th/backing.png)
 
-## ติดตั้ง (ครั้งแรกครั้งเดียว)
+## ติดตั้งจาก source (ครั้งแรกครั้งเดียว)
 ต้องมี **Python 3.10 – 3.13** (แนะนำ 3.11/3.12) — ดาวน์โหลดที่ python.org
 
 **Windows**: ดับเบิลคลิก `setup.bat`
@@ -60,9 +81,17 @@
 
 ## โครงสร้าง
 ```
+launcher.py     ตัวเปิดโปรแกรมแบบพร้อมใช้ (เลือกโฟลเดอร์เก็บเพลง, พอร์ต, เปิดเบราว์เซอร์)
 app.py          เว็บเซิร์ฟเวอร์ (FastAPI)
 processing.py   โหลด YouTube + แยกเสียง (Demucs) + หาจังหวะ (librosa, จับตรงเสียงกลอง)
 backing.py      สร้างไฟล์ Backing Track (มิกซ์ + ยืดเวลา + count-in + เมโทรนอม)
 i18n.py         รหัสข้อความ/ข้อผิดพลาดที่ส่งให้หน้าเว็บแปลภาษา
 static/         หน้าเว็บ (เล่นเพลง, มิกเซอร์, เมโทรนอม, Export) — คำแปลอยู่ใน static/i18n.js
+```
+
+## ออกเวอร์ชันใหม่ (Release)
+push tag แล้ว GitHub Actions จะ build ตัว Windows + Mac และสร้าง Release ให้อัตโนมัติ
+```bash
+git tag v1.0.0
+git push origin v1.0.0
 ```

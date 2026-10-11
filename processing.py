@@ -221,15 +221,19 @@ def run_download(job_id: str):
         "playlist_items": "1",  # album/playlist links -> only the first track
         "quiet": True,
         "no_warnings": True,
+        "noprogress": True,
         "ffmpeg_location": get_ffmpeg(),
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
         "progress_hooks": [hook],
         "match_filter": too_long,
     }
     try:  # YouTube needs a JS runtime for signature solving; the `deno` pip package provides one
-        import deno
+        deno_bin = os.environ.get("GS_DENO")
+        if not deno_bin:
+            import deno
 
-        opts["js_runtimes"] = {"deno": {"path": deno.find_deno_bin()}}
+            deno_bin = deno.find_deno_bin()
+        opts["js_runtimes"] = {"deno": {"path": deno_bin}}
     except Exception:
         pass
 

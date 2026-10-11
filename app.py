@@ -18,7 +18,10 @@ from pydantic import BaseModel
 import processing as P
 from i18n import UserError
 
-BASE = Path(__file__).parent
+import sys
+
+# when frozen by PyInstaller, bundled files live in sys._MEIPASS
+BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 ALLOWED = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 
 app = FastAPI(title="Guitar Stem Studio")
