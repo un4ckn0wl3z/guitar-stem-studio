@@ -2,7 +2,7 @@
 
 **English** · [ภาษาไทย](README.th.md)
 
-A local web app for guitar practice. Drop in an MP3 or paste a YouTube link. AI splits the song into 6 stems (guitar, vocals, drums, bass, piano, other) and transcribes the guitar into a tab that scrolls with the music. From there you can slow the song down, loop a section, practice with a metronome, or export a backing track without the guitar.
+A local web app for practicing guitar along with real songs. Drop in an MP3 or paste a YouTube link. AI splits the song into 6 stems (guitar, vocals, drums, bass, piano and other) so you can mute the guitar and play it yourself. You can also slow the song down, loop a section, add a metronome that follows the song, and export a backing track for practice.
 
 Everything runs on your own machine. No audio is uploaded anywhere (except the YouTube download itself).
 
@@ -13,24 +13,15 @@ Everything runs on your own machine. No audio is uploaded anywhere (except the Y
 | | |
 |---|---|
 | **Stem separation** | 6 stems with [Demucs](https://github.com/facebookresearch/demucs) `htdemucs_6s`. Each stem can be downloaded. |
-| **Mixer** | Per-stem volume, mute and solo. One-click presets: *All*, *Guitar only* and *No guitar (backing)*. |
+| **Mixer** | Per-stem volume, mute and solo, plus level meters. One-click presets: *All*, *Guitar only* and *No guitar (backing)*. |
 | **Slow down** | 25%–150% playback speed with pitch preserved. |
-| **A–B loop** | Set A/B with buttons or `[` `]`, or Shift-click measures in the tab. |
-| **Metronome** | Follows the song's real beats (beat tracking, snapped onto the drum hits), or a fixed BPM. Choose beats per bar and an optional 1-bar count-in. |
-| **Synced tab** | AI transcription with [basic-pitch](https://github.com/spotify/basic-pitch), placed on strings and frets with a hand-movement-minimizing algorithm. The tab has a live cursor and highlights the notes being played. Click a note to seek. |
-| **Import existing tabs** | PDF, Guitar Pro (`.gp3/.gp4/.gp5`), MusicXML (`.musicxml/.mxl`), `.txt`, or pasted text. **Auto-sync** lines the imported tab up with the audio. |
-| **Tab export** | ASCII `.txt`, **MusicXML** (opens in MuseScore, Guitar Pro and TuxGuitar), MIDI, and a sync JSON with the time, string and fret of every note. |
-| **Backing track export** | Pick stems and a time range (or use the A–B loop), set the speed, add a count-in and an optional metronome, then download MP3/WAV. Clicks are compensated for time-stretch latency so they land on the drums. |
-| **YouTube / YouTube Music** | Paste a link and the song is downloaded and processed automatically ([yt-dlp](https://github.com/yt-dlp/yt-dlp), bundled ffmpeg). |
+| **A–B loop** | Loop any section; set the points with buttons or the `[` `]` keys. |
+| **Metronome** | Follows the song's real beats (beat tracking snapped onto the drum hits), or uses a fixed BPM. Choose beats per bar, shift beat 1, and add an optional 1-bar count-in. |
+| **Backing track export** | Pick stems (guitar off by default) and a time range (or the A–B loop), set the speed, add a 1–2 bar count-in and an optional metronome, then download MP3 or WAV. Clicks are compensated for time-stretch latency so they land on the drums. |
+| **YouTube / YouTube Music** | Paste a link and the song is downloaded and processed automatically ([yt-dlp](https://github.com/yt-dlp/yt-dlp) with a bundled ffmpeg). |
 
 ### Library: upload an MP3 or paste a YouTube link
 ![Library](docs/images/library.png)
-
-### AI-transcribed tab, synced to the song
-![AI tab](docs/images/tab-ai.png)
-
-### Imported tab (PDF / Guitar Pro / MusicXML / text) with auto-sync
-![Imported tab](docs/images/tab-import.png)
 
 ### Backing track export
 ![Backing track](docs/images/backing.png)
@@ -70,23 +61,17 @@ Then open **http://localhost:8000**.
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-pip install --no-deps basic-pitch==0.4.0   # uses ONNX runtime instead of TensorFlow
 python app.py
 ```
 </details>
 
-## Importing tabs
+## Practice workflow
 
-| Source | Accuracy |
-|---|---|
-| Guitar Pro `.gp3/.gp4/.gp5`, MusicXML | ⭐⭐⭐ Exact notes, rhythm and repeats |
-| PDF exported from notation software | ⭐⭐ Strings and frets are exact; rhythm is estimated from spacing |
-| ASCII tab (`e|--0--3--|`) in PDF, `.txt` or pasted | ⭐⭐ Strings and frets are exact; rhythm is estimated |
-| Scanned or photographed PDF | ❌ Not supported (no OCR) |
-
-Guitar Pro 6/7/8 files (`.gpx`/`.gp`) are not supported directly. Export them to `.gp5` or MusicXML first.
-
-Auto-sync slides the imported tab across the AI transcription and picks the offset where the most notes agree. You can fine-tune it with the ±bar / ±beat buttons.
+1. Load a song and wait for it to finish processing.
+2. Press **No guitar (backing)** to mute the guitar stem.
+3. Set an A–B loop around the part you're learning and drop the speed to 50–75%.
+4. Turn on the metronome, optionally with a 1-bar count-in.
+5. Speed back up as you get it, or **Export Backing Track** to practice away from the computer.
 
 ## Keyboard shortcuts
 
@@ -107,18 +92,16 @@ Auto-sync slides the imported tab across the AI transcription and picks the offs
 
 ```
 app.py          FastAPI server + REST API
-processing.py   Pipeline: download → Demucs separation → beat tracking → basic-pitch transcription
-tabgen.py       Notes → string/fret assignment
-tabimport.py    PDF / Guitar Pro / MusicXML / ASCII tab importers
+processing.py   Pipeline: download → Demucs separation → beat tracking (snapped to drum hits)
 backing.py      Backing-track renderer (mix, time-stretch, count-in, metronome)
 static/         Web UI (vanilla JS, Web Audio)
 ```
 
 ## Notes
 
-- Auto-transcribed tabs are a starting point, not a finished tab. Clean single-note guitar transcribes much better than heavy distortion or dense chords. For the best result, import a real tab.
+- Separation quality depends on the mix. The guitar stem is cleanest on rock and pop with distinct guitars. Two guitars playing the same part, or guitar buried under keys, may bleed into *other* or *piano*.
 - Use this for personal practice with music you have the right to use. Downloading from YouTube may be against YouTube's Terms of Service.
 
 ## Credits
 
-[Demucs](https://github.com/facebookresearch/demucs) · [basic-pitch](https://github.com/spotify/basic-pitch) · [librosa](https://librosa.org) · [yt-dlp](https://github.com/yt-dlp/yt-dlp) · [pdfplumber](https://github.com/jsvine/pdfplumber) · [PyGuitarPro](https://github.com/Perlence/PyGuitarPro) · [FastAPI](https://fastapi.tiangolo.com)
+[Demucs](https://github.com/facebookresearch/demucs) · [librosa](https://librosa.org) · [yt-dlp](https://github.com/yt-dlp/yt-dlp) · [FastAPI](https://fastapi.tiangolo.com) · [Rubber Band](https://breakfastquay.com/rubberband/) (via ffmpeg)

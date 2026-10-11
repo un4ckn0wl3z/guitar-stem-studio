@@ -6,14 +6,6 @@ soundfile>=0.12
 fastapi
 uvicorn[standard]
 python-multipart
-onnxruntime
-mir_eval
-pretty_midi
-resampy<0.4.3
-scikit-learn
-setuptools<81
 yt-dlp[default]
 imageio-ffmpeg
 deno
-pdfplumber
-pyguitarpro

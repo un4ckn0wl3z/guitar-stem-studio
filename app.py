@@ -10,8 +10,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -96,102 +96,6 @@ def analysis(job_id: str):
     return FileResponse(p, media_type="application/json")
 
 
-class TranscribeReq(BaseModel):
-    stem: str = "guitar"
-    onset: float = 0.5
-    frame: float = 0.3
-    min_len_ms: float = 80.0
-
-
-@app.post("/api/jobs/{job_id}/transcribe")
-def transcribe(job_id: str, req: TranscribeReq):
-    m = _meta_or_404(job_id)
-    if m.get("status") not in ("done", "error"):
-        raise HTTPException(409, "งานยังประมวลผลอยู่")
-    P.enqueue_transcribe(job_id, req.model_dump())
-    return {"ok": True}
-
-
-# ------------------------------------------------------------ imported tabs
-
-TAB_EXTS = {".pdf", ".txt", ".tab", ".gp3", ".gp4", ".gp5", ".gp", ".gpx", ".musicxml", ".xml", ".mxl"}
-
-
-def _save_import(job_id: str, src: Path, track: int | None = None, bpb: float = 4, display: str | None = None) -> dict:
-    import json
-    import tabimport
-
-    try:
-        tab = tabimport.import_file(src, track=track, bpb_hint=bpb)
-    except tabimport.ImportErrorTH as e:
-        raise HTTPException(422, str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(422, f"อ่านไฟล์ไม่สำเร็จ: {type(e).__name__}: {e}")
-    tab["file"] = display or src.name
-    (P.job_dir(job_id) / "imported_tab.json").write_text(json.dumps(tab, ensure_ascii=False), "utf-8")
-    return tab
-
-
-@app.post("/api/jobs/{job_id}/tab-import")
-async def tab_import(job_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
-                     bpb: float = Form(4)):
-    _meta_or_404(job_id)
-    d = P.job_dir(job_id)
-    if file is not None and file.filename:
-        ext = Path(file.filename).suffix.lower()
-        if ext not in TAB_EXTS:
-            raise HTTPException(400, f"รองรับ {', '.join(sorted(TAB_EXTS))}")
-        src = d / f"incoming_src{ext}"
-        with open(src, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-    elif text and text.strip():
-        src = d / "incoming_src.txt"
-        src.write_text(text, "utf-8")
-    else:
-        raise HTTPException(400, "ไม่มีไฟล์หรือข้อความ Tab")
-    display = file.filename if file is not None and file.filename else "Tab ที่วาง"
-    try:
-        _save_import(job_id, src, bpb=bpb, display=display)  # validate first; keep the old tab if this fails
-    except HTTPException:
-        src.unlink(missing_ok=True)
-        raise
-    for old in d.glob("imported_src.*"):
-        old.unlink()
-    final = src.rename(d / src.name.replace("incoming_src", "imported_src"))
-    return _save_import(job_id, final, bpb=bpb, display=display)
-
-
-@app.post("/api/jobs/{job_id}/tab-import/track")
-def tab_import_track(job_id: str, index: int, bpb: float = 4):
-    _meta_or_404(job_id)
-    src = next(P.job_dir(job_id).glob("imported_src.*"), None)
-    if not src:
-        raise HTTPException(404, "ยังไม่ได้นำเข้า Tab")
-    import json
-
-    old = P.job_dir(job_id) / "imported_tab.json"
-    display = json.loads(old.read_text("utf-8")).get("file") if old.exists() else None
-    return _save_import(job_id, src, track=index, bpb=bpb, display=display)
-
-
-@app.get("/api/jobs/{job_id}/tab-import")
-def tab_import_get(job_id: str):
-    _meta_or_404(job_id)
-    p = P.job_dir(job_id) / "imported_tab.json"
-    if not p.exists():
-        raise HTTPException(404, "no imported tab")
-    return FileResponse(p, media_type="application/json")
-
-
-@app.delete("/api/jobs/{job_id}/tab-import")
-def tab_import_delete(job_id: str):
-    _meta_or_404(job_id)
-    d = P.job_dir(job_id)
-    for f in list(d.glob("imported_src.*")) + [d / "imported_tab.json"]:
-        f.unlink(missing_ok=True)
-    return {"ok": True}
-
-
 # ------------------------------------------------------------ backing track export
 
 class BackingReq(BaseModel):
@@ -237,15 +141,6 @@ def backing_file(job_id: str, file: str, name: str | None = None):
     if not p.exists():
         raise HTTPException(404, "ไฟล์หมดอายุ — กดสร้างใหม่")
     return FileResponse(p, filename=name) if name else FileResponse(p)
-
-
-@app.get("/api/jobs/{job_id}/midi")
-def midi(job_id: str):
-    m = _meta_or_404(job_id)
-    p = P.job_dir(job_id) / "transcription.mid"
-    if not p.exists():
-        raise HTTPException(404, "no midi")
-    return FileResponse(p, media_type="audio/midi", filename=f"{m['name']}-guitar.mid")
 
 
 @app.get("/api/jobs/{job_id}/stem/{name}")

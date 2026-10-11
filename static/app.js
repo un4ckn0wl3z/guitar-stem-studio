@@ -11,9 +11,6 @@ const STEM_INFO = {
   other: { th: 'อื่นๆ', c: '#a8a08f' },
 };
 const STEM_ORDER = ['guitar', 'vocals', 'drums', 'bass', 'piano', 'other'];
-const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const SUB = 4; // 16th-note grid
 
 const fmt = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${m}:${String(s).padStart(2, '0')}`; };
 const api = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText); return r.json(); };
@@ -44,7 +41,7 @@ async function refreshJobs() {
       el.className = 'job';
       const pct = Math.round((j.progress || 0) * 100);
       let sub;
-      if (j.status === 'done') sub = `${fmt(j.duration)} · ~${j.bpm || '?'} BPM · ${j.note_count ?? 0} โน้ต`;
+      if (j.status === 'done') sub = `${fmt(j.duration)} · ~${j.bpm || '?'} BPM`;
       else if (j.status === 'error') sub = `<span class="err">ผิดพลาด: ${escapeHtml(j.error || '')}</span>`;
       else sub = `${escapeHtml(j.stage || '')} · ${pct}%`;
       const src = j.url ? ` · <a class="src" href="${escapeHtml(j.url)}" target="_blank" rel="noopener">▶ YouTube</a>` : '';
@@ -171,8 +168,7 @@ class Engine {
 }
 
 /* ================================================================ PLAYER STATE */
-let engine = null, job = null, analysis = null, grid = [], gridDownbeatIdx = 0, gridOrigin = 0;
-let imported = null; // imported tab (PDF / GP / MusicXML / text)
+let engine = null, job = null, analysis = null, grid = [];
 let loop = { a: null, b: null, on: false };
 let settings = {};
 
@@ -198,8 +194,7 @@ async function openJob(id) {
   engine.setMaster(+$('#master').value / 100);
   setPlayIcon();
 
-  settings = Object.assign({ sens: 0.3, dbOffset: 0, sync: 0, bpb: 4, metroBpm: null, metroMode: 'song', tabSrc: null, tabShift: null }, store.get('job:' + id, {}));
-  imported = null;
+  settings = Object.assign({ dbOffset: 0, bpb: 4, metroBpm: null, metroMode: 'song' }, store.get('job:' + id, {}));
   loop = { a: null, b: null, on: false };
   buildMixer();
   await loadAnalysis();
@@ -214,15 +209,9 @@ function saveSettings() { if (job) store.set('job:' + job.id, settings); }
 
 async function loadAnalysis() {
   try { analysis = await api(`/api/jobs/${job.id}/analysis?ts=${Date.now()}`); }
-  catch { analysis = { beats: [], notes: [], bpm: 120, duration: engine.duration }; }
+  catch { analysis = { beats: [], bpm: 120, duration: engine.duration }; }
   if (settings.metroBpm == null) settings.metroBpm = Math.round(analysis.bpm || 120);
-  const sel = $('#retrStem'); sel.innerHTML = '';
-  for (const t of engine.tracks) { const o = document.createElement('option'); o.value = t.name; o.textContent = STEM_INFO[t.name]?.th || t.name; sel.appendChild(o); }
-  const o = document.createElement('option'); o.value = 'original'; o.textContent = 'เพลงต้นฉบับ (ทั้งหมด)'; sel.appendChild(o);
-  sel.value = analysis.notes_stem || 'guitar';
-  await loadImported();
   rebuildGrid();
-  if (settings.tabSrc === 'import' && imported && settings.tabShift == null) autoAlign();
 }
 
 /* ================================================================ MIXER */
@@ -380,7 +369,6 @@ function updateLoopUI() {
     r.style.left = (a / engine.duration * 100) + '%';
     r.style.width = ((b - a) / engine.duration * 100) + '%';
   } else r.classList.add('hidden');
-  drawLoopOnTab();
 }
 function setA() { loop.a = engine.time; if (loop.b != null && loop.b <= loop.a) loop.b = null; updateLoopUI(); }
 function setB() { if (loop.a == null) loop.a = 0; const t = engine.time; if (t > loop.a + 0.2) { loop.b = t; loop.on = true; } updateLoopUI(); }
@@ -397,7 +385,7 @@ function rebuildGrid() {
   if (settings.metroMode === 'manual' || (analysis.beats || []).length < 4) {
     const iv = 60 / (settings.metroBpm || analysis.bpm || 120);
     b = []; for (let t = 0; t < dur + iv * 8; t += iv) b.push(t);
-    gridDownbeatIdx = 0; gridOrigin = 0;
+
   } else {
     b = analysis.beats.slice();
     const iv0 = b[1] - b[0];
@@ -405,15 +393,12 @@ function rebuildGrid() {
     while (b[0] > 1e-3) { b.unshift(b[0] - iv0); pre++; }
     // make sure the chosen first downbeat lands on a multiple of beats-per-bar
     const bpb = settings.bpb;
-    const d0 = useImport() ? (settings.tabShift || 0) : (+settings.dbOffset || 0);
-    let first = pre + d0;
-    while (((first % bpb) + bpb) % bpb !== 0) { b.unshift(b[0] - iv0); first++; pre++; }
-    gridOrigin = pre;
+    let first = pre + (+settings.dbOffset || 0);
+    while (((first % bpb) + bpb) % bpb !== 0) { b.unshift(b[0] - iv0); first++; }
     const ivN = b[b.length - 1] - b[b.length - 2];
     while (b[b.length - 1] < dur + ivN * 8) b.push(b[b.length - 1] + ivN);
   }
   grid = b;
-  layoutTab();
 }
 function beatAt(t) { // fractional beat index for time t
   const g = grid; if (!g.length) return 0;
@@ -479,448 +464,14 @@ $('#metroMode').onchange = () => { settings.metroMode = $('#metroMode').value; $
 $('#metroBpm').onchange = () => { settings.metroBpm = +$('#metroBpm').value || 120; saveSettings(); if (settings.metroMode === 'manual') rebuildGrid(); metroReset(); };
 $('#beatsPerBar').onchange = () => { settings.bpb = +$('#beatsPerBar').value; saveSettings(); buildDots(); rebuildGrid(); };
 
-/* ================================================================ TAB */
-let tabRows = [];      // [{svg, m0, m1, y}]
-let tabNotes = [];     // quantized notes [{t,d,s,f,p,v,beat,slot,measure, el}]
-let measureW = 0, slotW = 0;
-const ROW = { top: 18, gap: 13, pad: 10, left: 22 };
-const rowHeight = () => ROW.top + ROW.gap * 5 + ROW.pad + 8;
-
-const useImport = () => settings.tabSrc === 'import' && !!imported;
-
-function placeNote(n, beat, out) {
-  const slotG = Math.round(beat * SUB), spm = SUB * settings.bpb;
-  const key = slotG + ':' + n.s;
-  const prev = out.get(key);
-  if (prev && prev.v >= n.v) return;
-  out.set(key, { ...n, slotG, measure: Math.floor(slotG / spm), slot: ((slotG % spm) + spm) % spm });
-}
-
-// imported tab: measure-based positions -> song beats -> seconds (follows the real beat grid)
-function importedNotes(shift = settings.tabShift || 0) {
-  const out = new Map();
-  const base = gridOrigin + shift;
-  let cum = 0;
-  const flat = [];
-  for (const m of imported.measures) {
-    for (const n of m.notes) flat.push({ n, beat: base + cum + n.pos });
-    cum += m.len;
-  }
-  flat.sort((a, b) => a.beat - b.beat);
-  for (let i = 0; i < flat.length; i++) {
-    const { n, beat } = flat[i];
-    let durB = n.dur;
-    if (!durB) { // no rhythm info: ring until the next onset (max 2 beats)
-      let j = i + 1; while (j < flat.length && flat[j].beat - beat < 0.05) j++;
-      durB = Math.min(2, j < flat.length ? flat[j].beat - beat : 1);
-    }
-    const t = timeAtBeat(beat);
-    placeNote({ t, d: Math.max(0.05, timeAtBeat(beat + durB) - t), p: n.p, s: n.s, f: n.f, v: 1 }, beat, out);
-  }
-  return [...out.values()].sort((a, b) => a.slotG - b.slotG || a.s - b.s);
-}
-
-function quantizedNotes() {
-  if (useImport()) return importedNotes();
-  const thr = settings.sens;
-  const out = new Map();
-  for (const n of analysis.notes || []) {
-    if (n.v < thr) continue;
-    const bf = beatAt(n.t);
-    let slotG = Math.round(bf * SUB);
-    const key = slotG + ':' + n.s;
-    const prev = out.get(key);
-    if (prev && prev.v >= n.v) continue;
-    out.set(key, { ...n, slotG, measure: Math.floor(slotG / (SUB * settings.bpb)), slot: ((slotG % (SUB * settings.bpb)) + SUB * settings.bpb) % (SUB * settings.bpb) });
-  }
-  return [...out.values()].sort((a, b) => a.slotG - b.slotG || a.s - b.s);
-}
-
-function layoutTab() {
-  const view = $('#tabView');
-  view.innerHTML = '';
-  tabRows = [];
-  if (!analysis) return;
-  tabNotes = quantizedNotes();
-  const spm = SUB * settings.bpb;
-  const totalBeats = beatAt(engine.duration || analysis.duration);
-  const nMeasures = Math.max(1, Math.ceil(totalBeats / settings.bpb));
-  const W = Math.max(280, $('#tabScroll').clientWidth - 24);
-  const avail = W - ROW.left;
-  const perRow = Math.max(1, Math.floor(avail / (spm * 20)));
-  measureW = avail / perRow; slotW = measureW / spm;
-  const H = rowHeight();
-  const NS = 'http://www.w3.org/2000/svg';
-  const mk = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
-  const byMeasure = new Map();
-  for (const n of tabNotes) { if (!byMeasure.has(n.measure)) byMeasure.set(n.measure, []); byMeasure.get(n.measure).push(n); }
-
-  const frag = document.createDocumentFragment();
-  for (let m0 = 0; m0 < nMeasures; m0 += perRow) {
-    const m1 = Math.min(nMeasures, m0 + perRow);
-    const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, height: H, 'data-m0': m0 });
-    const loopG = mk('g', {}, svg);
-    for (let s = 0; s < 6; s++) {
-      const y = ROW.top + s * ROW.gap;
-      mk('line', { x1: ROW.left, x2: ROW.left + (m1 - m0) * measureW, y1: y, y2: y, class: 'str' }, svg);
-      { const t = mk('text', { x: 9, y, class: 'tuning' }, svg); t.textContent = STRING_NAMES[s]; }
-    }
-    for (let m = m0; m <= m1; m++) {
-      const x = ROW.left + (m - m0) * measureW;
-      mk('line', { x1: x, x2: x, y1: ROW.top, y2: ROW.top + ROW.gap * 5, class: 'barl' }, svg);
-      if (m < m1) {
-        const t = mk('text', { x: x + 3, y: ROW.top - 7, class: 'mnum' }, svg); t.textContent = m + 1;
-        for (let b = 1; b < settings.bpb; b++) { const bx = x + b * SUB * slotW; mk('line', { x1: bx, x2: bx, y1: ROW.top + ROW.gap * 5 + 3, y2: ROW.top + ROW.gap * 5 + 7, class: 'beat' }, svg); }
-      }
-    }
-    for (let m = m0; m < m1; m++) {
-      for (const n of byMeasure.get(m) || []) {
-        const x = ROW.left + (m - m0) * measureW + (n.slot + 0.5) * slotW;
-        const y = ROW.top + n.s * ROW.gap;
-        const g = mk('g', { class: 'note' }, svg);
-        const label = String(n.f);
-        const w = label.length > 1 ? 15 : 9;
-        mk('rect', { x: x - w / 2, y: y - 6, width: w, height: 12, rx: 2, class: 'nb' }, g);
-        const tx = mk('text', { x, y, class: 'n' }, g); tx.textContent = label;
-        const tt = mk('title', {}, g); tt.textContent = `${NOTE_NAMES[n.p % 12]}${Math.floor(n.p / 12) - 1} · สาย ${n.s + 1} เฟร็ต ${n.f} · ${fmt(n.t)}`;
-        n.el = g;
-      }
-    }
-    svg.addEventListener('click', (e) => onTabClick(e, svg, m0));
-    frag.appendChild(svg);
-    tabRows.push({ svg, m0, m1, loopG });
-  }
-  view.appendChild(frag);
-  const nc = (analysis.notes || []).length;
-  if (useImport()) { $('#tabInfo').textContent = `· Tab นำเข้า · ${tabNotes.length} โน้ต · ${imported.measures.length} ห้อง`; updateAlignUI(); }
-  else $('#tabInfo').textContent = `· ${tabNotes.length}/${nc} โน้ต · แทร็ก: ${STEM_INFO[analysis.notes_stem]?.th || (analysis.notes_stem === 'original' ? 'ต้นฉบับ' : analysis.notes_stem) || '-'} · ~${analysis.bpm} BPM`;
-  activeNotes.clear();
-  drawLoopOnTab();
-}
-
-function onTabClick(e, svg, m0) {
-  const r = svg.getBoundingClientRect();
-  const W = svg.viewBox.baseVal.width;
-  const x = (e.clientX - r.left) * (W / r.width) - ROW.left;
-  if (x < 0) return;
-  const m = m0 + Math.floor(x / measureW);
-  const slot = (x - (m - m0) * measureW) / slotW;
-  const beatF = m * settings.bpb + Math.floor(slot / SUB);
-  if (e.shiftKey) { // select loop by measures
-    const ms = timeAtBeat(m * settings.bpb), me = timeAtBeat((m + 1) * settings.bpb);
-    if (loop.a == null || loop.b != null) { loop = { a: ms, b: null, on: false }; }
-    else { const a = Math.min(loop.a, ms), b = Math.max(loop.a + 0.01, me); loop = { a, b, on: true }; }
-    updateLoopUI(); return;
-  }
-  seekTo(Math.max(0, timeAtBeat(beatF)));
-}
-
-function drawLoopOnTab() {
-  for (const r of tabRows) {
-    r.loopG.innerHTML = '';
-    if (loop.a == null || loop.b == null) continue;
-    const ba = beatAt(loop.a) / settings.bpb, bb = beatAt(loop.b) / settings.bpb;
-    const s = Math.max(ba, r.m0), e = Math.min(bb, r.m1);
-    if (e <= s) continue;
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', ROW.left + (s - r.m0) * measureW); rect.setAttribute('width', (e - s) * measureW);
-    rect.setAttribute('y', ROW.top - 4); rect.setAttribute('height', ROW.gap * 5 + 8); rect.setAttribute('class', 'loopbg');
-    r.loopG.appendChild(rect);
-  }
-}
-
-/* ---- live cursor + note highlight */
-const activeNotes = new Set();
-let lastRow = -1;
-function updateTabCursor(t) {
-  const cur = $('#cursor');
-  if (!tabRows.length) { cur.style.display = 'none'; return; }
-  const bf = beatAt(t);
-  const mF = bf / settings.bpb;
-  const ri = tabRows.findIndex((r) => mF >= r.m0 && mF < r.m1);
-  if (ri < 0) { cur.style.display = 'none'; return; }
-  const row = tabRows[ri];
-  const scale = row.svg.getBoundingClientRect().width / row.svg.viewBox.baseVal.width;
-  const x = (ROW.left + (mF - row.m0) * measureW) * scale;
-  cur.style.display = 'block';
-  // SVG elements have no offsetTop/Left -> measure relative to the scroll container
-  const sc = $('#tabScroll'), scR = sc.getBoundingClientRect(), svR = row.svg.getBoundingClientRect();
-  const rowTop = svR.top - scR.top + sc.scrollTop, rowLeft = svR.left - scR.left + sc.scrollLeft;
-  cur.style.left = (rowLeft + x) + 'px';
-  cur.style.top = (rowTop + (ROW.top - 6) * scale) + 'px';
-  cur.style.height = ((ROW.gap * 5 + 12) * scale) + 'px';
-  if (ri !== lastRow) {
-    lastRow = ri;
-    if ($('#autoScroll').checked && engine.playing) {
-      const target = rowTop - sc.clientHeight / 3;
-      sc.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-    }
-  }
-  // highlight notes that are sounding (min 120 ms so short notes still flash)
-  const slotNow = bf * SUB;
-  for (const n of activeNotes) { if (!(n.t <= t && t < n.t + Math.max(n.d, 0.12))) { n.el?.classList.remove('hi'); activeNotes.delete(n); } }
-  // notes are sorted by slot: search around the current slot
-  let lo = 0, hi = tabNotes.length;
-  while (lo < hi) { const m = (lo + hi) >> 1; if (tabNotes[m].slotG < slotNow - 64) lo = m + 1; else hi = m; }
-  for (let i = lo; i < tabNotes.length && tabNotes[i].slotG <= slotNow + 1; i++) {
-    const n = tabNotes[i];
-    if (n.t <= t && t < n.t + Math.max(n.d, 0.12) && !activeNotes.has(n)) { n.el?.classList.add('hi'); activeNotes.add(n); }
-  }
-}
-
 /* ---- settings UI */
 function applySettingsToUI() {
-  $('#sens').value = settings.sens; $('#sensVal').textContent = (+settings.sens).toFixed(2);
   $('#dbOffset').value = settings.dbOffset;
-  $('#syncOff').value = settings.sync; $('#syncVal').textContent = settings.sync;
   $('#beatsPerBar').value = settings.bpb;
   $('#metroMode').value = settings.metroMode; $('#metroBpm').value = settings.metroBpm; $('#metroBpm').disabled = settings.metroMode !== 'manual';
   buildDots();
 }
-let sensTimer;
-$('#sens').oninput = () => { settings.sens = +$('#sens').value; $('#sensVal').textContent = settings.sens.toFixed(2); clearTimeout(sensTimer); sensTimer = setTimeout(() => { saveSettings(); layoutTab(); }, 150); };
-$('#dbOffset').onchange = () => { settings.dbOffset = +$('#dbOffset').value; saveSettings(); rebuildGrid(); };
-$('#syncOff').oninput = () => { settings.sync = +$('#syncOff').value; $('#syncVal').textContent = settings.sync; saveSettings(); };
-let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (analysis && !$('#playerView').classList.contains('hidden')) layoutTab(); }, 200); });
-
-/* ---- re-transcribe */
-$('#retrBtn').onclick = async () => {
-  const stem = $('#retrStem').value, onset = +$('#retrOnset').value;
-  $('#tabStatus').textContent = 'กำลังถอดโน้ตใหม่…';
-  try { await api(`/api/jobs/${job.id}/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stem, onset }) }); }
-  catch (e) { $('#tabStatus').textContent = 'ผิดพลาด: ' + e.message; return; }
-  const id = job.id;
-  const poll = async () => {
-    const m = await api(`/api/jobs/${id}`);
-    if (job?.id !== id) return;
-    if (m.status === 'done') { $('#tabStatus').textContent = 'ถอดโน้ตเสร็จแล้ว'; await loadAnalysis(); setTimeout(() => ($('#tabStatus').textContent = ''), 3000); }
-    else if (m.status === 'error') $('#tabStatus').textContent = 'ผิดพลาด: ' + m.error;
-    else { $('#tabStatus').textContent = `${m.stage} ${Math.round(m.progress * 100)}%`; setTimeout(poll, 1500); }
-  };
-  poll();
-};
-
-/* ================================================================ TAB IMPORT */
-const SRC_LABEL = { 'pdf-text': 'PDF (ข้อความ)', 'pdf-vector': 'PDF', ascii: 'ข้อความ', guitarpro: 'Guitar Pro', musicxml: 'MusicXML' };
-
-async function loadImported() {
-  try { imported = await api(`/api/jobs/${job.id}/tab-import?ts=${Date.now()}`); } catch { imported = null; }
-  if (settings.tabSrc == null) settings.tabSrc = imported ? 'import' : 'ai';
-  if (!imported && settings.tabSrc === 'import') settings.tabSrc = 'ai';
-  renderImportPanel();
-}
-
-function renderImportPanel() {
-  const imp = useImport();
-  document.body.classList.toggle('src-import', imp);
-  $('#srcAi').classList.toggle('on', !imp);
-  $('#srcImp').classList.toggle('on', imp);
-  $('#srcImp').disabled = !imported;
-  $('#impPanel').classList.toggle('hidden', !imp);
-  if (!imported) return;
-  const exact = imported.exact_rhythm ? 'จังหวะตามไฟล์' : 'จังหวะโดยประมาณ';
-  $('#impInfo').innerHTML = `<b>${escapeHtml(imported.title || imported.file || 'Tab')}</b> · ${SRC_LABEL[imported.source] || imported.source} · ${imported.measures.length} ห้อง · ${imported.note_count} โน้ต · ${exact}`;
-  const tw = $('#trackWrap'), ts = $('#impTrack');
-  tw.classList.toggle('hidden', (imported.tracks || []).length < 2);
-  ts.innerHTML = (imported.tracks || []).map((n, i) => `<option value="${i}">${i + 1}. ${escapeHtml(n || 'Track')}</option>`).join('');
-  ts.value = imported.track ?? 0;
-  $('#impWarn').textContent = (imported.warnings || []).join(' · ');
-  updateAlignUI();
-}
-
-function updateAlignUI() {
-  if (!imported) return;
-  const b = gridOrigin + (settings.tabShift || 0);
-  const bar = Math.floor(b / settings.bpb) + 1, beat = ((b % settings.bpb) + settings.bpb) % settings.bpb + 1;
-  $('#alignVal').textContent = `ห้อง ${bar} จังหวะ ${beat} (${fmt(Math.max(0, timeAtBeat(b)))})`;
-}
-
-function setTabSrc(src) {
-  if (src === 'import' && !imported) return;
-  settings.tabSrc = src; saveSettings();
-  renderImportPanel();
-  if (src === 'import') {
-    const tabBpb = Math.round(imported.measures[0]?.len || 4);
-    if (tabBpb >= 2 && tabBpb <= 7 && tabBpb !== settings.bpb) { settings.bpb = tabBpb; $('#beatsPerBar').value = tabBpb; buildDots(); }
-    if (settings.tabShift == null) { rebuildGrid(); autoAlign(); return; }
-  }
-  rebuildGrid();
-}
-$('#srcAi').onclick = () => setTabSrc('ai');
-$('#srcImp').onclick = () => setTabSrc('import');
-
-/* Auto-sync: slide the imported tab over the AI transcription of the audio and pick the
-   offset (in beats) where the most notes agree (same 16th slot ±1, same pitch class). */
-function autoAlign() {
-  if (!imported) return;
-  const ai = (analysis.notes || []).filter((n) => n.v >= 0.3);
-  const keys = new Set();
-  for (const n of ai) { const sl = Math.round(beatAt(n.t) * SUB); const pc = n.p % 12; keys.add((sl - 1) * 12 + pc); keys.add(sl * 12 + pc); keys.add((sl + 1) * 12 + pc); }
-  let cum = 0; const tn = [];
-  for (const m of imported.measures) { for (const n of m.notes) tn.push({ b: cum + n.pos, pc: n.p % 12 }); cum += m.len; }
-  if (!tn.length) return;
-  const sample = tn.length > 1500 ? tn.filter((_, i) => i % Math.ceil(tn.length / 1500) === 0) : tn;
-  const totalBeats = Math.ceil(beatAt(engine.duration || analysis.duration));
-  let best = null, bestScore = -1;
-  if (ai.length > 10) {
-    for (let sh = -gridOrigin - Math.ceil(tn[0].b); sh <= totalBeats - gridOrigin; sh++) {
-      let sc = 0;
-      for (const n of sample) { const sl = Math.round((gridOrigin + sh + n.b) * SUB); if (keys.has(sl * 12 + n.pc)) sc++; }
-      if (sc > bestScore) { bestScore = sc; best = sh; }
-    }
-  }
-  if (best == null || bestScore < sample.length * 0.08) {
-    // fallback: first tab note lands on the first confidently-detected note
-    const firstAi = ai.length ? Math.round(beatAt(ai[0].t)) : gridOrigin;
-    best = firstAi - gridOrigin - Math.floor(tn[0].b);
-    $('#tabStatus').textContent = 'ซิงก์อัตโนมัติไม่มั่นใจ — ปรับจุดเริ่มด้วยปุ่ม ±ห้อง/จังหวะ ได้';
-  } else {
-    $('#tabStatus').textContent = `ซิงก์อัตโนมัติแล้ว (ตรงกับเสียงจริง ${Math.round(bestScore / sample.length * 100)}%)`;
-  }
-  clearTimeout(autoAlign.t); autoAlign.t = setTimeout(() => ($('#tabStatus').textContent = ''), 6000);
-  settings.tabShift = best; saveSettings();
-  rebuildGrid();
-}
-$('#autoAlign').onclick = autoAlign;
-document.querySelectorAll('[data-shift]').forEach((b) => (b.onclick = () => {
-  const v = b.dataset.shift;
-  const d = v === 'bar' ? settings.bpb : v === '-bar' ? -settings.bpb : +v;
-  settings.tabShift = (settings.tabShift || 0) + d; saveSettings(); rebuildGrid();
-}));
-
-async function sendImport(fd, label) {
-  $('#tabStatus').textContent = `กำลังอ่าน ${label} …`;
-  fd.append('bpb', settings.bpb);
-  try {
-    imported = await api(`/api/jobs/${job.id}/tab-import`, { method: 'POST', body: fd });
-  } catch (e) { $('#tabStatus').innerHTML = `<span class="err">นำเข้าไม่สำเร็จ: ${escapeHtml(e.message)}</span>`; return false; }
-  settings.tabShift = null;
-  setTabSrc('import');
-  return true;
-}
-$('#tabFile').addEventListener('change', async (e) => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  const fd = new FormData(); fd.append('file', f); await sendImport(fd, f.name);
-});
-$('#pasteBtn').onclick = () => { $('#pasteBox').classList.toggle('hidden'); $('#pasteText').focus(); };
-$('#pasteCancel').onclick = () => $('#pasteBox').classList.add('hidden');
-$('#pasteGo').onclick = async () => {
-  const t = $('#pasteText').value; if (!t.trim()) return;
-  const fd = new FormData(); fd.append('text', t);
-  if (await sendImport(fd, 'Tab ข้อความ')) { $('#pasteBox').classList.add('hidden'); $('#pasteText').value = ''; }
-};
-$('#impTrack').onchange = async () => {
-  try { imported = await api(`/api/jobs/${job.id}/tab-import/track?index=${$('#impTrack').value}&bpb=${settings.bpb}`, { method: 'POST' }); }
-  catch (e) { $('#tabStatus').textContent = 'ผิดพลาด: ' + e.message; return; }
-  settings.tabShift = null; setTabSrc('import');
-};
-$('#impDelete').onclick = async () => {
-  if (!confirm('ลบ Tab ที่นำเข้า แล้วกลับไปใช้ Tab จาก AI ?')) return;
-  await api(`/api/jobs/${job.id}/tab-import`, { method: 'DELETE' });
-  imported = null; settings.tabShift = null; setTabSrc('ai');
-};
-
-/* ================================================================ EXPORTS */
-function download(name, text, type) {
-  const blob = text instanceof Blob ? text : new Blob([text], { type });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-const safeName = () => (job?.name || 'song').replace(/[\\/:*?"<>|]+/g, '_');
-
-function measuresData() {
-  const spm = SUB * settings.bpb;
-  const nMeasures = Math.max(1, Math.ceil(beatAt(engine.duration || analysis.duration) / settings.bpb));
-  const ms = Array.from({ length: nMeasures }, () => []);
-  for (const n of tabNotes) if (n.measure >= 0 && n.measure < nMeasures) ms[n.measure].push(n);
-  return { ms, spm };
-}
-
-function exportTxt() {
-  const { ms, spm } = measuresData();
-  const perLine = 4, CW = 3;
-  let out = `${job.name}\nTuning: E A D G B e (standard)   Tempo: ~${analysis.bpm} BPM   ${settings.bpb}/4\n`;
-  out += `Auto-transcribed by Guitar Stem Studio (each column = 1/16 note)\n\n`;
-  for (let i = 0; i < ms.length; i += perLine) {
-    const lines = STRING_NAMES.map((s) => s + '|');
-    const nums = ' '.repeat(2);
-    let header = nums;
-    for (let m = i; m < Math.min(ms.length, i + perLine); m++) {
-      const cols = Array.from({ length: 6 }, () => Array(spm).fill('-'.repeat(CW)));
-      for (const n of ms[m]) { const f = String(n.f); cols[n.s][n.slot] = (f + '-'.repeat(CW)).slice(0, CW); }
-      for (let s = 0; s < 6; s++) lines[s] += cols[s].join('') + '|';
-      header += String(m + 1).padEnd(spm * CW + 1, ' ');
-    }
-    out += header.trimEnd() + '\n' + lines.join('\n') + '\n\n';
-  }
-  download(`${safeName()}-tab.txt`, out, 'text/plain;charset=utf-8');
-}
-
-function exportMusicXML() {
-  const { ms, spm } = measuresData();
-  const TYPES = [[16, 'whole', 0], [12, 'half', 1], [8, 'half', 0], [6, 'quarter', 1], [4, 'quarter', 0], [3, 'eighth', 1], [2, 'eighth', 0], [1, '16th', 0]];
-  const split = (d) => { const r = []; while (d > 0) { const t = TYPES.find((x) => x[0] <= d); r.push(t); d -= t[0]; } return r; };
-  const typeXml = (t) => `<type>${t[1]}</type>${t[2] ? '<dot/>' : ''}`;
-  const pitchXml = (p) => { const n = NOTE_NAMES[p % 12]; return `<pitch><step>${n[0]}</step>${n.length > 1 ? '<alter>1</alter>' : ''}<octave>${Math.floor(p / 12) - 1}</octave></pitch>`; };
-  const rest = (d) => split(d).map((t) => `<note><rest/><duration>${t[0]}</duration><voice>1</voice>${typeXml(t)}</note>`).join('');
-  const tuning = [[64, 'E', 4], [59, 'B', 3], [55, 'G', 3], [50, 'D', 3], [45, 'A', 2], [40, 'E', 2]];
-  let body = '';
-  ms.forEach((notes, mi) => {
-    let x = `<measure number="${mi + 1}">`;
-    if (mi === 0) {
-      x += `<attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>${settings.bpb}</beats><beat-type>4</beat-type></time>` +
-        `<clef><sign>TAB</sign><line>5</line></clef><staff-details><staff-lines>6</staff-lines>` +
-        tuning.slice().reverse().map((t, i) => `<staff-tuning line="${i + 1}"><tuning-step>${t[1]}</tuning-step><tuning-octave>${t[2]}</tuning-octave></staff-tuning>`).join('') +
-        `</staff-details></attributes><direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${Math.round(analysis.bpm)}</per-minute></metronome></direction-type><sound tempo="${Math.round(analysis.bpm)}"/></direction>`;
-    }
-    const bySlot = new Map();
-    for (const n of notes) { if (!bySlot.has(n.slot)) bySlot.set(n.slot, []); bySlot.get(n.slot).push(n); }
-    const slots = [...bySlot.keys()].sort((a, b) => a - b);
-    if (!slots.length) x += `<note><rest measure="yes"/><duration>${spm}</duration><voice>1</voice></note>`;
-    else {
-      let pos = 0;
-      slots.forEach((sl, i) => {
-        if (sl > pos) x += rest(sl - pos);
-        const gap = (i + 1 < slots.length ? slots[i + 1] : spm) - sl;
-        const chord = bySlot.get(sl).sort((a, b) => a.p - b.p);
-        const slotSec = beatDurationAt(chord[0].t) / SUB;
-        const len = Math.max(1, Math.min(gap, Math.round(Math.max(...chord.map((n) => n.d)) / slotSec)));
-        const t = TYPES.find((tt) => tt[0] <= len);
-        chord.forEach((n, ci) => {
-          x += `<note>${ci ? '<chord/>' : ''}${pitchXml(n.p)}<duration>${t[0]}</duration><voice>1</voice>${typeXml(t)}` +
-            `<notations><technical><string>${n.s + 1}</string><fret>${n.f}</fret></technical></notations></note>`;
-        });
-        if (gap > t[0]) x += rest(gap - t[0]);
-        pos = sl + gap;
-      });
-    }
-    body += x + '</measure>\n';
-  });
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
-<score-partwise version="3.1"><work><work-title>${escapeHtml(job.name)}</work-title></work>
-<identification><encoding><software>Guitar Stem Studio</software></encoding></identification>
-<part-list><score-part id="P1"><part-name>Guitar</part-name><score-instrument id="P1-I1"><instrument-name>Guitar</instrument-name></score-instrument><midi-instrument id="P1-I1"><midi-program>26</midi-program></midi-instrument></score-part></part-list>
-<part id="P1">
-${body}</part></score-partwise>`;
-  download(`${safeName()}-tab.musicxml`, xml, 'application/vnd.recordare.musicxml+xml');
-}
-
-function exportJson() {
-  const data = {
-    app: 'Guitar Stem Studio', version: 1, song: job.name, duration: engine.duration, bpm: analysis.bpm,
-    beatsPerBar: settings.bpb, syncOffsetMs: settings.sync, tuning: 'EADGBE',
-    beats: grid.filter((t) => t >= 0 && t <= engine.duration + 0.01).map((t) => +t.toFixed(4)),
-    notes: tabNotes.map((n) => ({ time: +(n.t + settings.sync / 1000).toFixed(4), dur: +n.d.toFixed(4), string: n.s + 1, fret: n.f, midi: n.p, measure: n.measure + 1, slot16: n.slot })),
-  };
-  download(`${safeName()}-tab-sync.json`, JSON.stringify(data, null, 1), 'application/json');
-}
-
-$('#expTxt').onclick = exportTxt;
-$('#expXml').onclick = exportMusicXML;
-$('#expJson').onclick = exportJson;
-$('#expMidi').onclick = () => { location.href = `/api/jobs/${job.id}/midi`; };
+$('#dbOffset').onchange = () => { settings.dbOffset = +$('#dbOffset').value; saveSettings(); rebuildGrid(); metroReset(); };
 
 /* ================================================================ UI LOOP */
 function frame() {
@@ -935,7 +486,6 @@ function frame() {
       const bf = beatAt(t);
       const bar = Math.floor(bf / settings.bpb) + 1, beat = ((Math.floor(bf) % settings.bpb) + settings.bpb) % settings.bpb + 1;
       $('#posInfo').textContent = `ห้อง ${bar} · จังหวะ ${beat}`;
-      updateTabCursor(t + settings.sync / 1000);
     }
     for (const tr of engine.tracks) if (tr.ui) tr.ui.meter.style.width = engine.playing ? Math.min(100, engine.level(tr) * 140) + '%' : '0%';
   }

@@ -1,4 +1,4 @@
-"""Audio pipeline: stem separation (Demucs), beat tracking (librosa), guitar transcription (basic-pitch)."""
+"""Audio pipeline: download (yt-dlp), stem separation (Demucs), beat tracking (librosa)."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,6 @@ from pathlib import Path
 
 import numpy as np
 
-from tabgen import assign_frets, STANDARD_TUNING
 
 DATA_DIR = Path(os.environ.get("GS_DATA_DIR", Path(__file__).parent / "data" / "jobs"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -80,7 +79,6 @@ def create_job(filename: str, src_path: Path) -> str:
         created=time.time(),
         stems=[],
         error=None,
-        transcribe_stem="guitar",
     )
     _queue.put(("full", job_id, {}))
     return job_id
@@ -101,15 +99,9 @@ def create_job_from_url(url: str) -> str:
         created=time.time(),
         stems=[],
         error=None,
-        transcribe_stem="guitar",
     )
     _queue.put(("youtube", job_id, {}))
     return job_id
-
-
-def enqueue_transcribe(job_id: str, opts: dict):
-    write_meta(job_id, status="queued", stage="รอคิว (ถอดโน้ตใหม่)", progress=0.85, error=None)
-    _queue.put(("transcribe", job_id, opts))
 
 
 def delete_job(job_id: str):
@@ -127,9 +119,6 @@ def _worker():
                 run_full(job_id)
             elif kind == "full":
                 run_full(job_id)
-            elif kind == "transcribe":
-                run_transcribe(job_id, **opts)
-                write_meta(job_id, status="done", stage="เสร็จแล้ว", progress=1.0)
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             write_meta(job_id, status="error", error=f"{type(e).__name__}: {e}")
@@ -270,11 +259,11 @@ def run_full(job_id: str):
     import librosa
 
     # ---- separation
-    stems = separate(src, d, lambda p: write_meta(job_id, stage="กำลังแยกเสียง (AI)", progress=0.05 + 0.75 * p))
+    stems = separate(src, d, lambda p: write_meta(job_id, stage="กำลังแยกเสียง (AI)", progress=0.05 + 0.83 * p))
     write_meta(job_id, stems=stems)
 
     # ---- beats / tempo on the original mix (more reliable than drums alone)
-    write_meta(job_id, stage="กำลังหาจังหวะ (beat)", progress=0.82)
+    write_meta(job_id, stage="กำลังหาจังหวะ (beat)", progress=0.9)
     y, sr = librosa.load(str(src), sr=22050, mono=True)
     duration = float(len(y) / sr)
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames", trim=False)
@@ -283,12 +272,9 @@ def run_full(job_id: str):
     if len(beats) > 4:
         bpm = float(60.0 / np.median(np.diff(beats)))
     beats = refine_beats(beats, d / next((x for x in stems if x.startswith("drums.")), ""), y, sr)
-    analysis = {"duration": duration, "bpm": round(bpm, 2), "beats": [round(b, 4) for b in beats], "beats_refined": 2,
-                "tuning": STANDARD_TUNING, "notes": [], "notes_stem": None}
+    analysis = {"duration": duration, "bpm": round(bpm, 2), "beats": [round(b, 4) for b in beats], "beats_refined": 2}
     (d / "analysis.json").write_text(json.dumps(analysis), "utf-8")
 
-    # ---- transcription
-    run_transcribe(job_id, stem="guitar")
     write_meta(job_id, status="done", stage="เสร็จแล้ว", progress=1.0, duration=duration, bpm=round(bpm, 1))
 
 
@@ -411,37 +397,3 @@ def separate(src: Path, out_dir: Path, progress_cb) -> list[str]:
             sf.write(str(out), audio, sr, subtype="PCM_16")
         names.append(out.name)
     return names
-
-
-def run_transcribe(job_id: str, stem: str = "guitar", onset: float = 0.5, frame: float = 0.3,
-                   min_len_ms: float = 80.0):
-    """Polyphonic note transcription with Spotify basic-pitch, then fret assignment."""
-    d = job_dir(job_id)
-    meta = read_meta(job_id)
-    write_meta(job_id, status="running", stage=f"กำลังถอดโน้ต ({stem}) → tab", progress=0.86)
-    stem_file = next((s for s in meta.get("stems", []) if s.rsplit(".", 1)[0] == stem), None)
-    path = d / stem_file if stem_file else d / meta["source"]
-
-    from basic_pitch.inference import predict
-    from basic_pitch import ICASSP_2022_MODEL_PATH
-
-    _, midi, events = predict(
-        str(path),
-        ICASSP_2022_MODEL_PATH,
-        onset_threshold=float(onset),
-        frame_threshold=float(frame),
-        minimum_note_length=float(min_len_ms),
-        minimum_frequency=75.0,
-        maximum_frequency=1400.0,
-        melodia_trick=True,
-    )
-    midi.write(str(d / "transcription.mid"))
-    raw = [{"t": float(s), "d": float(e - s), "p": int(p), "v": float(a)} for s, e, p, a, *_ in events]
-    notes = assign_frets(raw)
-
-    ap = d / "analysis.json"
-    analysis = json.loads(ap.read_text("utf-8"))
-    analysis["notes"] = notes
-    analysis["notes_stem"] = stem
-    ap.write_text(json.dumps(analysis), "utf-8")
-    write_meta(job_id, transcribe_stem=stem, note_count=len(notes))
