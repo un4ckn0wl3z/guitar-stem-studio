@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Stem Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" id="homeBtn"><span class="logo">◉</span> Guitar Stem Studio</div>
+  <div class="topbar-right"><span id="songTitle" class="song-title"></span></div>
+</header>
+
+<!-- ============ LIBRARY ============ -->
+<main id="libraryView" class="view">
+  <label id="drop" class="drop">
+    <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.flac,.ogg,.aac" hidden>
+    <div class="drop-icon">♫</div>
+    <div class="drop-title">ลากไฟล์ MP3 มาวาง หรือคลิกเพื่อเลือก</div>
+    <div class="drop-sub">AI จะแยกเป็น 6 แทร็ก: กีตาร์ · เสียงร้อง · กลอง · เบส · เปียโน · อื่นๆ แล้วถอดโน้ตกีตาร์เป็น Tab</div>
+  </label>
+  <form id="ytForm" class="yt-form">
+    <span class="yt-badge">▶ YouTube</span>
+    <input type="url" id="ytUrl" placeholder="วางลิงก์ YouTube / YouTube Music เช่น https://music.youtube.com/watch?v=..." autocomplete="off" required>
+    <button type="submit" class="on">โหลดเพลง</button>
+  </form>
+  <div id="uploadStatus" class="upload-status"></div>
+  <h2 class="section-h">เพลงของฉัน</h2>
+  <div id="jobList" class="job-list"><div class="empty">ยังไม่มีเพลง</div></div>
+</main>
+
+<!-- ============ PLAYER ============ -->
+<main id="playerView" class="view hidden">
+  <div id="loadingOverlay" class="loading hidden">กำลังโหลดแทร็ก…</div>
+
+  <!-- transport -->
+  <section class="card transport">
+    <div class="tr-row">
+      <button id="backBtn" class="icon-btn" title="กลับไปหน้าเพลง">←</button>
+      <button id="rewBtn" class="icon-btn" title="ย้อน 5 วิ (←)">⟲5</button>
+      <button id="playBtn" class="play-btn" title="เล่น/หยุด (Space)">▶</button>
+      <button id="fwdBtn" class="icon-btn" title="ไปข้างหน้า 5 วิ (→)">5⟳</button>
+      <div class="time"><span id="curTime">0:00</span> / <span id="durTime">0:00</span></div>
+      <div class="pos-info" id="posInfo">ห้อง 1 · จังหวะ 1</div>
+    </div>
+    <div class="seek-wrap">
+      <div id="loopRegion" class="loop-region hidden"></div>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+    </div>
+    <div class="tr-grid">
+      <div class="ctl">
+        <label>ความเร็ว <b id="rateVal">100%</b></label>
+        <input type="range" id="rate" min="25" max="150" value="100" step="5">
+        <div class="chips">
+          <button data-rate="50">50%</button><button data-rate="75">75%</button><button data-rate="90">90%</button><button data-rate="100">100%</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>เสียงรวม (Master) <b id="masterVal">100%</b></label>
+        <input type="range" id="master" min="0" max="150" value="100">
+        <div class="chips">
+          <button id="presetAll">ทุกแทร็ก</button><button id="presetGuitar">เฉพาะกีตาร์</button><button id="presetBacking">ตัดกีตาร์ (Backing)</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>วนซ้ำ A–B <b id="loopVal">ปิด</b></label>
+        <div class="chips">
+          <button id="setA">ตั้ง A</button><button id="setB">ตั้ง B</button><button id="loopToggle">วน: ปิด</button><button id="loopClear">ล้าง</button>
+        </div>
+        <div class="hint">หรือ Shift+คลิกที่ห้องใน Tab เพื่อเลือกช่วง</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- mixer -->
+  <section class="card">
+    <h3>มิกเซอร์ (Volume แต่ละแทร็ก)</h3>
+    <div id="mixer" class="mixer"></div>
+  </section>
+
+  <!-- backing track export -->
+  <section class="card backing">
+    <div class="bk-head">
+      <h3>Export Backing Track <span class="muted">— เลือกแทร็ก ช่วงเวลา ความเร็ว แล้วดาวน์โหลดไปซ้อม</span></h3>
+      <button id="bkToggle" class="small-btn">แสดง</button>
+    </div>
+    <div id="bkBody" class="bk-body hidden">
+      <div class="bk-row">
+        <div class="ctl">
+          <label>แทร็กที่จะใส่ <span class="muted">(ระดับเสียงตามมิกเซอร์)</span></label>
+          <div id="bkStems" class="chips"></div>
+        </div>
+      </div>
+      <div class="bk-row">
+        <div class="ctl">
+          <label>ช่วงเวลา</label>
+          <div class="inline bk-range">
+            <input id="bkStart" class="time-in" value="0:00.0" title="เริ่ม (นาที:วินาที)"> <span>ถึง</span>
+            <input id="bkEnd" class="time-in" value="0:00.0" title="จบ (นาที:วินาที)">
+            <button id="bkAll">ทั้งเพลง</button><button id="bkAB">ใช้ช่วง A–B</button>
+            <button id="bkNowS">เริ่ม = ตอนนี้</button><button id="bkNowE">จบ = ตอนนี้</button>
+          </div>
+          <label class="check"><input type="checkbox" id="bkSnap" checked> ปัดให้ตรงต้นห้อง/ท้ายห้อง</label>
+        </div>
+      </div>
+      <div class="bk-row">
+        <div class="ctl small">
+          <label>ความเร็ว <b id="bkRateVal">100%</b></label>
+          <input type="range" id="bkRate" min="25" max="150" step="5" value="100">
+        </div>
+        <div class="ctl small">
+          <label>นับนำ (count-in)</label>
+          <select id="bkCount"><option value="0">ไม่มี</option><option value="1" selected>1 ห้อง</option><option value="2">2 ห้อง</option></select>
+        </div>
+        <label class="check"><input type="checkbox" id="bkMetro"> ใส่เมโทรนอมตลอดเพลง</label>
+        <div class="ctl small">
+          <label>เสียงคลิก <b id="bkClickVal">80%</b></label>
+          <input type="range" id="bkClick" min="0" max="150" value="80">
+        </div>
+        <div class="ctl small">
+          <label>ไฟล์</label>
+          <select id="bkFmt"><option value="mp3">MP3</option><option value="wav">WAV</option></select>
+        </div>
+      </div>
+      <div class="bk-row bk-go">
+        <button id="bkGo" class="on">สร้าง Backing Track</button>
+        <span id="bkStatus" class="muted"></span>
+      </div>
+      <div id="bkResult" class="bk-result hidden">
+        <audio id="bkAudio" controls preload="none"></audio>
+        <a id="bkDl" class="dl-btn" href="#">⬇ ดาวน์โหลด</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- metronome -->
+  <section class="card metro">
+    <h3>เมโทรนอม</h3>
+    <div class="metro-row">
+      <button id="metroToggle" class="toggle">ปิด</button>
+      <div class="ctl small">
+        <label>เสียงคลิก <b id="metroVolVal">80%</b></label>
+        <input type="range" id="metroVol" min="0" max="150" value="80">
+      </div>
+      <div class="ctl small">
+        <label>โหมด</label>
+        <select id="metroMode">
+          <option value="song">ตามจังหวะเพลง (auto)</option>
+          <option value="manual">กำหนด BPM เอง</option>
+        </select>
+      </div>
+      <div class="ctl small">
+        <label>BPM</label>
+        <input type="number" id="metroBpm" min="30" max="300" step="0.5" value="120">
+      </div>
+      <div class="ctl small">
+        <label>จังหวะ/ห้อง</label>
+        <select id="beatsPerBar"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
+      </div>
+      <label class="check"><input type="checkbox" id="countIn"> นับนำ 1 ห้อง</label>
+      <div class="beat-dots" id="beatDots"></div>
+    </div>
+  </section>
+
+  <!-- tab -->
+  <section class="card tabcard">
+    <div class="tab-head">
+      <h3>Tab กีตาร์ <span class="muted" id="tabInfo"></span></h3>
+      <div class="chips">
+        <button id="expTxt">Export .txt</button>
+        <button id="expXml">Export MusicXML</button>
+        <button id="expMidi">Export MIDI</button>
+        <button id="expJson">Export Sync (.json)</button>
+      </div>
+    </div>
+    <div class="tab-source">
+      <div class="seg" role="group" aria-label="แหล่ง Tab">
+        <button id="srcAi" class="on">AI ถอดจากเสียง</button><button id="srcImp">Tab ที่นำเข้า</button>
+      </div>
+      <label class="import-btn" title="PDF, Guitar Pro (.gp3/.gp4/.gp5), MusicXML (.musicxml/.mxl), ข้อความ (.txt)">
+        📄 นำเข้า Tab จากไฟล์
+        <input type="file" id="tabFile" accept=".pdf,.txt,.tab,.gp3,.gp4,.gp5,.gp,.gpx,.musicxml,.xml,.mxl" hidden>
+      </label>
+      <button id="pasteBtn">วาง Tab ข้อความ</button>
+    </div>
+    <div id="pasteBox" class="paste hidden">
+      <textarea id="pasteText" rows="8" spellcheck="false" placeholder="วาง Tab แบบตัวอักษร เช่น&#10;e|-----0-----|&#10;B|---1---1---|&#10;G|-2-------2-|&#10;D|-----------|&#10;A|-----------|&#10;E|-----------|"></textarea>
+      <div class="inline"><button id="pasteGo" class="on">นำเข้า</button><button id="pasteCancel">ยกเลิก</button></div>
+    </div>
+    <div id="impPanel" class="imp-panel hidden">
+      <div id="impInfo" class="imp-info"></div>
+      <div class="imp-row">
+        <div class="ctl small" id="trackWrap">
+          <label>แทร็กในไฟล์</label>
+          <select id="impTrack"></select>
+        </div>
+        <div class="ctl align">
+          <label>จุดเริ่ม Tab ในเพลง <b id="alignVal">-</b></label>
+          <div class="inline">
+            <button data-shift="-bar">−1 ห้อง</button><button data-shift="-1">−1 จังหวะ</button>
+            <button data-shift="1">+1 จังหวะ</button><button data-shift="bar">+1 ห้อง</button>
+            <button id="autoAlign" class="on">ซิงก์อัตโนมัติ</button>
+          </div>
+        </div>
+        <button id="impDelete" class="danger">ลบ Tab ที่นำเข้า</button>
+      </div>
+      <div class="hint" id="impWarn"></div>
+    </div>
+    <div class="tab-settings">
+      <div class="ctl small ai-only">
+        <label>กรองโน้ตเบา <b id="sensVal">0.30</b></label>
+        <input type="range" id="sens" min="0" max="0.8" step="0.01" value="0.3">
+      </div>
+      <div class="ctl small ai-only">
+        <label>เลื่อนห้องแรก (downbeat)</label>
+        <select id="dbOffset"><option value="0">0</option><option value="1">+1 beat</option><option value="2">+2 beat</option><option value="3">+3 beat</option></select>
+      </div>
+      <div class="ctl small">
+        <label>ซิงก์ Tab (ms) <b id="syncVal">0</b></label>
+        <input type="range" id="syncOff" min="-500" max="500" step="10" value="0">
+      </div>
+      <label class="check"><input type="checkbox" id="autoScroll" checked> เลื่อนตาม</label>
+      <div class="ctl small retr ai-only">
+        <label>ถอดโน้ตใหม่จากแทร็ก</label>
+        <div class="inline">
+          <select id="retrStem"></select>
+          <select id="retrOnset"><option value="0.35">ละเอียด</option><option value="0.5" selected>ปกติ</option><option value="0.65">เฉพาะโน้ตชัด</option></select>
+          <button id="retrBtn">ถอดใหม่</button>
+        </div>
+      </div>
+    </div>
+    <div id="tabStatus" class="muted tab-status"></div>
+    <div id="tabScroll" class="tab-scroll">
+      <div id="tabView" class="tab-view"></div>
+      <div id="cursor" class="cursor"></div>
+    </div>
+  </section>
+  <footer class="kbd">คีย์ลัด: <b>Space</b> เล่น/หยุด · <b>← →</b> ±5 วิ · <b>[ ]</b> ตั้ง A/B · <b>L</b> วนซ้ำ · <b>M</b> เมโทรนอม · <b>- +</b> ความเร็ว</footer>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
